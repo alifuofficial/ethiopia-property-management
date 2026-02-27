@@ -5273,6 +5273,13 @@ function PaymentsView({ payments, setPayments, user }: {
   user: User | null;
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [formData, setFormData] = useState({
     contractId: '',
     invoiceId: '',
@@ -5284,6 +5291,19 @@ function PaymentsView({ payments, setPayments, user }: {
   });
 
   const canApprove = user?.role && ['SYSTEM_ADMIN', 'OWNER', 'ACCOUNTANT'].includes(user.role);
+
+  const filteredPayments = payments.filter(p => {
+    const matchesSearch = 
+      (p.contract?.tenant?.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.transactionId || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+  const pendingAmount = payments.filter(p => p.status === 'PENDING').reduce((sum, p) => sum + p.amount, 0);
+  const approvedAmount = payments.filter(p => p.status === 'APPROVED').reduce((sum, p) => sum + p.amount, 0);
+  const pendingCount = payments.filter(p => p.status === 'PENDING').length;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -5298,6 +5318,7 @@ function PaymentsView({ payments, setPayments, user }: {
       setPayments([...payments, newPayment]);
       setIsDialogOpen(false);
       resetForm();
+      toast({ title: 'Success', description: 'Payment recorded successfully' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create payment', variant: 'destructive' });
     }
@@ -5309,7 +5330,6 @@ function PaymentsView({ payments, setPayments, user }: {
       const updated = await api<Payment[]>('/payments');
       setPayments(updated);
       
-      // Send SMS notification for payment confirmation
       try {
         await api('/sms', {
           method: 'POST',
@@ -5324,16 +5344,18 @@ function PaymentsView({ payments, setPayments, user }: {
     }
   };
 
-  const handleReject = async (id: string) => {
-    const reason = prompt('Rejection reason:');
-    if (!reason) return;
+  const handleReject = async () => {
+    if (!selectedPayment || !rejectionReason) return;
     try {
-      await api(`/payments/${id}/reject`, {
+      await api(`/payments/${selectedPayment.id}/reject`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason: rejectionReason }),
       });
       const updated = await api<Payment[]>('/payments');
       setPayments(updated);
+      setIsRejectDialogOpen(false);
+      setSelectedPayment(null);
+      setRejectionReason('');
       toast({ title: 'Success', description: 'Payment rejected' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to reject', variant: 'destructive' });
@@ -5353,114 +5375,401 @@ function PaymentsView({ payments, setPayments, user }: {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      PENDING: 'outline',
-      APPROVED: 'default',
-      REJECTED: 'destructive',
+    const styles: Record<string, string> = {
+      PENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+      APPROVED: 'bg-green-100 text-green-700 border-green-200',
+      REJECTED: 'bg-red-100 text-red-700 border-red-200',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status}</Badge>;
+    return (
+      <Badge className={`${styles[status] || 'bg-gray-100 text-gray-700'} font-medium`}>
+        {status}
+      </Badge>
+    );
+  };
+
+  const getPaymentMethodIcon = (method: string) => {
+    switch(method) {
+      case 'chapa': return <CreditCard className="h-4 w-4" />;
+      case 'telebirr': return <Phone className="h-4 w-4" />;
+      case 'bank_transfer': return <Building className="h-4 w-4" />;
+      case 'cash': return <Banknote className="h-4 w-4" />;
+      default: return <Wallet className="h-4 w-4" />;
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Payments</h1>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg">
+            <Wallet className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">Payments</h1>
+            <p className="text-sm text-muted-foreground">{payments.length} total payments</p>
+          </div>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Record Payment</Button>
+            <Button className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700">
+              <Plus className="mr-2 h-4 w-4" /> Record Payment
+            </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Record Payment</DialogTitle>
+          <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle className="flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-cyan-600" />
+                Record Payment
+              </DialogTitle>
+              <DialogDescription>Record a new payment transaction</DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Amount (ETB)</Label>
-                  <Input type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
+            <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
+              <form id="payment-form" onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Amount (ETB) *</Label>
+                    <Input type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="border-cyan-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Type</Label>
+                    <Select value={formData.paymentType} onValueChange={(v) => setFormData({ ...formData, paymentType: v })}>
+                      <SelectTrigger className="border-cyan-500/20"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MONTHLY">Monthly</SelectItem>
+                        <SelectItem value="ADVANCE">Advance</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Payment Method</Label>
+                    <Select value={formData.paymentMethod} onValueChange={(v) => setFormData({ ...formData, paymentMethod: v })}>
+                      <SelectTrigger className="border-cyan-500/20"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="chapa">Chapa</SelectItem>
+                        <SelectItem value="telebirr">Telebirr</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="cash">Cash</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Transaction ID</Label>
+                    <Input value={formData.transactionId} onChange={(e) => setFormData({ ...formData, transactionId: e.target.value })} className="border-cyan-500/20" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={formData.paymentType} onValueChange={(v) => setFormData({ ...formData, paymentType: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MONTHLY">Monthly</SelectItem>
-                      <SelectItem value="ADVANCE">Advance</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-sm font-medium">Notes</Label>
+                  <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="border-cyan-500/20" />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Payment Method</Label>
-                  <Select value={formData.paymentMethod} onValueChange={(v) => setFormData({ ...formData, paymentMethod: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="chapa">Chapa</SelectItem>
-                      <SelectItem value="telebirr">Telebirr</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="cash">Cash</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Transaction ID</Label>
-                  <Input value={formData.transactionId} onChange={(e) => setFormData({ ...formData, transactionId: e.target.value })} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Notes</Label>
-                <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
-              </div>
-              <DialogFooter>
-                <Button type="submit">Record Payment</Button>
-              </DialogFooter>
-            </form>
+              </form>
+            </div>
+            <DialogFooter className="p-6 pt-0 border-t">
+              <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+              <Button type="submit" form="payment-form" className="bg-gradient-to-r from-cyan-500 to-blue-600">Record Payment</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tenant</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Method</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Date</TableHead>
-              {canApprove && <TableHead>Actions</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {payments.map((payment) => (
-              <TableRow key={payment.id}>
-                <TableCell>{payment.contract?.tenant?.fullName}</TableCell>
-                <TableCell>{payment.amount.toLocaleString()} ETB</TableCell>
-                <TableCell>{payment.paymentType}</TableCell>
-                <TableCell>{payment.paymentMethod || '-'}</TableCell>
-                <TableCell>{getStatusBadge(payment.status)}</TableCell>
-                <TableCell>{new Date(payment.createdAt).toLocaleDateString()}</TableCell>
-                {canApprove && (
-                  <TableCell>
-                    {payment.status === 'PENDING' && (
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={() => handleApprove(payment.id)}>
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleReject(payment.id)}>
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-cyan-50 to-blue-50 border-cyan-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-cyan-600 font-medium">Total Payments</p>
+                <p className="text-2xl font-bold text-cyan-700">{totalAmount.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-2 rounded-lg bg-cyan-100">
+                <Wallet className="h-5 w-5 text-cyan-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium">Approved</p>
+                <p className="text-2xl font-bold text-green-700">{approvedAmount.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-2 rounded-lg bg-green-100">
+                <Check className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'all' : 'PENDING')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-amber-600 font-medium">Pending</p>
+                <p className="text-2xl font-bold text-amber-700">{pendingCount}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-100">
+                <Clock className="h-5 w-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-purple-50 to-violet-50 border-purple-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Pending Value</p>
+                <p className="text-2xl font-bold text-purple-700">{pendingAmount.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-2 rounded-lg bg-purple-100">
+                <Banknote className="h-5 w-5 text-purple-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and View Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search payments by tenant or transaction ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 border-cyan-500/20"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40 border-cyan-500/20">
+            <SelectValue placeholder="Filter status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="PENDING">Pending</SelectItem>
+            <SelectItem value="APPROVED">Approved</SelectItem>
+            <SelectItem value="REJECTED">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex gap-2">
+          <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-cyan-500' : ''}>
+            <Building className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === 'table' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('table')} className={viewMode === 'table' ? 'bg-cyan-500' : ''}>
+            <FileText className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredPayments.map((payment) => (
+            <Card key={payment.id} className="group hover:shadow-lg transition-all duration-300 border-cyan-100 hover:border-cyan-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600">
+                      {getPaymentMethodIcon(payment.paymentMethod)}
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{payment.contract?.tenant?.fullName || 'Unknown'}</CardTitle>
+                      <CardDescription className="text-xs">{payment.paymentType} Payment</CardDescription>
+                    </div>
+                  </div>
+                  {getStatusBadge(payment.status)}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-cyan-50">
+                  <span className="text-sm text-muted-foreground">Amount</span>
+                  <span className="font-bold text-cyan-600">{payment.amount.toLocaleString()} ETB</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+                  <span>{payment.paymentMethod || 'Not specified'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span>{new Date(payment.createdAt).toLocaleDateString()}</span>
+                </div>
+                {payment.transactionId && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="truncate">TXN: {payment.transactionId}</span>
+                  </div>
                 )}
+                <div className="flex items-center gap-2 pt-2 border-t">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedPayment(payment); setIsDetailDialogOpen(true); }}>
+                    <Eye className="h-4 w-4 mr-1" /> View
+                  </Button>
+                  {canApprove && payment.status === 'PENDING' && (
+                    <>
+                      <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => handleApprove(payment.id)}>
+                        <Check className="h-4 w-4 mr-1" /> Approve
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => { setSelectedPayment(payment); setIsRejectDialogOpen(true); }}>
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {filteredPayments.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <Wallet className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No payments found</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === 'table' && (
+        <Card className="border-cyan-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-cyan-50/50">
+                <TableHead>Tenant</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Method</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+                {canApprove && <TableHead>Actions</TableHead>}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredPayments.map((payment) => (
+                <TableRow key={payment.id} className="hover:bg-cyan-50/50">
+                  <TableCell className="font-medium">{payment.contract?.tenant?.fullName}</TableCell>
+                  <TableCell className="font-semibold text-cyan-600">{payment.amount.toLocaleString()} ETB</TableCell>
+                  <TableCell>{payment.paymentType}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {getPaymentMethodIcon(payment.paymentMethod)}
+                      <span>{payment.paymentMethod || '-'}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{getStatusBadge(payment.status)}</TableCell>
+                  <TableCell>{new Date(payment.createdAt).toLocaleDateString()}</TableCell>
+                  {canApprove && (
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => { setSelectedPayment(payment); setIsDetailDialogOpen(true); }}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {payment.status === 'PENDING' && (
+                          <>
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApprove(payment.id)}>
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="text-red-600" onClick={() => { setSelectedPayment(payment); setIsRejectDialogOpen(true); }}>
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+              {filteredPayments.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={canApprove ? 7 : 6} className="text-center py-12">
+                    <Wallet className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No payments found</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-cyan-600" />
+              Payment Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedPayment && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-cyan-100 to-blue-100">
+                <div>
+                  <h3 className="text-xl font-bold">{selectedPayment.amount.toLocaleString()} ETB</h3>
+                  <p className="text-muted-foreground">{selectedPayment.contract?.tenant?.fullName}</p>
+                </div>
+                {getStatusBadge(selectedPayment.status)}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Payment Type</p>
+                  <p className="font-semibold">{selectedPayment.paymentType}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Payment Method</p>
+                  <p className="font-semibold">{selectedPayment.paymentMethod || 'Not specified'}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Transaction ID</p>
+                  <p className="font-semibold">{selectedPayment.transactionId || 'N/A'}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Date</p>
+                  <p className="font-semibold">{new Date(selectedPayment.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+              {selectedPayment.notes && (
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Notes</p>
+                  <p className="font-semibold">{selectedPayment.notes}</p>
+                </div>
+              )}
+              {selectedPayment.rejectionReason && (
+                <div className="p-4 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-600 font-medium">Rejection Reason</p>
+                  <p className="text-red-700">{selectedPayment.rejectionReason}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="h-5 w-5" />
+              Reject Payment
+            </DialogTitle>
+            <DialogDescription>Please provide a reason for rejection</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Rejection Reason *</Label>
+              <Textarea 
+                value={rejectionReason} 
+                onChange={(e) => setRejectionReason(e.target.value)} 
+                placeholder="Enter the reason for rejecting this payment..."
+                className="border-red-200"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsRejectDialogOpen(false); setSelectedPayment(null); setRejectionReason(''); }}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={handleReject}>Reject Payment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -5471,6 +5780,26 @@ function TerminationsView({ terminations, setTerminations, user }: {
   setTerminations: React.Dispatch<React.SetStateAction<ContractTerminationRequest[]>>;
   user: User | null;
 }) {
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [selectedTermination, setSelectedTermination] = useState<ContractTerminationRequest | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+
+  const filteredTerminations = terminations.filter(t => {
+    const matchesSearch = 
+      (t.contract?.tenant?.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.reason || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalRefund = terminations.reduce((sum, t) => sum + (t.refundAmount || 0), 0);
+  const pendingCount = terminations.filter(t => t.status === 'PENDING').length;
+  const completedCount = terminations.filter(t => t.status === 'COMPLETED').length;
+
   const handleAccountantApprove = async (id: string) => {
     try {
       await api(`/terminations/${id}/accountant-approve`, { method: 'POST' });
@@ -5504,13 +5833,15 @@ function TerminationsView({ terminations, setTerminations, user }: {
     }
   };
 
-  const handleReject = async (id: string) => {
-    const reason = prompt('Rejection reason:');
-    if (!reason) return;
+  const handleReject = async () => {
+    if (!selectedTermination || !rejectionReason) return;
     try {
-      await api(`/terminations/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+      await api(`/terminations/${selectedTermination.id}/reject`, { method: 'POST', body: JSON.stringify({ reason: rejectionReason }) });
       const updated = await api<ContractTerminationRequest[]>('/terminations');
       setTerminations(updated);
+      setIsRejectDialogOpen(false);
+      setSelectedTermination(null);
+      setRejectionReason('');
       toast({ title: 'Success', description: 'Request rejected' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to reject', variant: 'destructive' });
@@ -5518,14 +5849,24 @@ function TerminationsView({ terminations, setTerminations, user }: {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      PENDING: 'outline',
-      ACCOUNTANT_APPROVED: 'secondary',
-      OWNER_APPROVED: 'default',
-      COMPLETED: 'default',
-      REJECTED: 'destructive',
+    const styles: Record<string, string> = {
+      PENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+      ACCOUNTANT_APPROVED: 'bg-blue-100 text-blue-700 border-blue-200',
+      OWNER_APPROVED: 'bg-green-100 text-green-700 border-green-200',
+      COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      REJECTED: 'bg-red-100 text-red-700 border-red-200',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status.replace('_', ' ')}</Badge>;
+    return (
+      <Badge className={`${styles[status] || 'bg-gray-100 text-gray-700'} font-medium`}>
+        {status.replace('_', ' ')}
+      </Badge>
+    );
+  };
+
+  const getStatusProgress = (status: string) => {
+    const steps = ['PENDING', 'ACCOUNTANT_APPROVED', 'OWNER_APPROVED', 'COMPLETED'];
+    const currentIndex = steps.indexOf(status);
+    return currentIndex >= 0 ? ((currentIndex + 1) / steps.length) * 100 : 0;
   };
 
   const isAccountant = user?.role === 'ACCOUNTANT' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER';
@@ -5533,61 +5874,381 @@ function TerminationsView({ terminations, setTerminations, user }: {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Contract Terminations</h1>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 shadow-lg">
+            <XCircle className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-rose-600 to-red-600 bg-clip-text text-transparent">Contract Terminations</h1>
+            <p className="text-sm text-muted-foreground">{terminations.length} termination requests</p>
+          </div>
+        </div>
+      </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tenant</TableHead>
-              <TableHead>Reason</TableHead>
-              <TableHead>Refund</TableHead>
-              <TableHead>Bank Info</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {terminations.map((term) => (
-              <TableRow key={term.id}>
-                <TableCell>{term.contract?.tenant?.fullName}</TableCell>
-                <TableCell className="max-w-xs truncate">{term.reason}</TableCell>
-                <TableCell>{term.refundAmount?.toLocaleString() || 0} ETB</TableCell>
-                <TableCell>
-                  {term.bankName && (
-                    <span className="text-sm">{term.bankName} - {term.bankAccountNumber}</span>
-                  )}
-                </TableCell>
-                <TableCell>{getStatusBadge(term.status)}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    {term.status === 'PENDING' && isAccountant && (
-                      <>
-                        <Button size="sm" onClick={() => handleAccountantApprove(term.id)}>
-                          <Check className="h-4 w-4 mr-1" /> Approve
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleReject(term.id)}>
-                          Reject
-                        </Button>
-                      </>
-                    )}
-                    {term.status === 'ACCOUNTANT_APPROVED' && isOwner && (
-                      <Button size="sm" onClick={() => handleOwnerApprove(term.id)}>
-                        Owner Approve
-                      </Button>
-                    )}
-                    {term.status === 'OWNER_APPROVED' && isAccountant && (
-                      <Button size="sm" onClick={() => handleComplete(term.id)}>
-                        Complete & Pay
-                      </Button>
-                    )}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-rose-50 to-red-50 border-rose-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-rose-600 font-medium">Total Requests</p>
+                <p className="text-2xl font-bold text-rose-700">{terminations.length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-rose-100">
+                <FileText className="h-5 w-5 text-rose-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'all' : 'PENDING')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-amber-600 font-medium">Pending</p>
+                <p className="text-2xl font-bold text-amber-700">{pendingCount}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-100">
+                <Clock className="h-5 w-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'COMPLETED' ? 'all' : 'COMPLETED')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-emerald-600 font-medium">Completed</p>
+                <p className="text-2xl font-bold text-emerald-700">{completedCount}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-100">
+                <Check className="h-5 w-5 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-purple-50 to-violet-50 border-purple-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Total Refunds</p>
+                <p className="text-2xl font-bold text-purple-700">{totalRefund.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-2 rounded-lg bg-purple-100">
+                <Banknote className="h-5 w-5 text-purple-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and View Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <XCircle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by tenant name or reason..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 border-rose-500/20"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-44 border-rose-500/20">
+            <SelectValue placeholder="Filter status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="PENDING">Pending</SelectItem>
+            <SelectItem value="ACCOUNTANT_APPROVED">Accountant Approved</SelectItem>
+            <SelectItem value="OWNER_APPROVED">Owner Approved</SelectItem>
+            <SelectItem value="COMPLETED">Completed</SelectItem>
+            <SelectItem value="REJECTED">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex gap-2">
+          <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-rose-500' : ''}>
+            <Building className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === 'table' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('table')} className={viewMode === 'table' ? 'bg-rose-500' : ''}>
+            <FileText className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredTerminations.map((term) => (
+            <Card key={term.id} className="group hover:shadow-lg transition-all duration-300 border-rose-100 hover:border-rose-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600">
+                      <XCircle className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{term.contract?.tenant?.fullName || 'Unknown'}</CardTitle>
+                      <CardDescription className="text-xs">{term.contract?.property?.name}</CardDescription>
+                    </div>
                   </div>
-                </TableCell>
+                  {getStatusBadge(term.status)}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Progress Bar */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Progress</span>
+                    <span>{Math.round(getStatusProgress(term.status))}%</span>
+                  </div>
+                  <Progress value={getStatusProgress(term.status)} className="h-2" />
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg bg-rose-50">
+                  <span className="text-sm text-muted-foreground">Refund Amount</span>
+                  <span className="font-bold text-rose-600">{(term.refundAmount || 0).toLocaleString()} ETB</span>
+                </div>
+
+                <div className="flex items-start gap-2 text-sm">
+                  <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <span className="line-clamp-2">{term.reason || 'No reason provided'}</span>
+                </div>
+
+                {term.bankName && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Building className="h-4 w-4 text-muted-foreground" />
+                    <span>{term.bankName} - {term.bankAccountNumber}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span>{new Date(term.createdAt).toLocaleDateString()}</span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedTermination(term); setIsDetailDialogOpen(true); }}>
+                    <Eye className="h-4 w-4 mr-1" /> View
+                  </Button>
+                  {term.status === 'PENDING' && isAccountant && (
+                    <>
+                      <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => handleAccountantApprove(term.id)}>
+                        <Check className="h-4 w-4 mr-1" /> Approve
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => { setSelectedTermination(term); setIsRejectDialogOpen(true); }}>
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                  {term.status === 'ACCOUNTANT_APPROVED' && isOwner && (
+                    <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => handleOwnerApprove(term.id)}>
+                      <Check className="h-4 w-4 mr-1" /> Owner Approve
+                    </Button>
+                  )}
+                  {term.status === 'OWNER_APPROVED' && isAccountant && (
+                    <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => handleComplete(term.id)}>
+                      <Banknote className="h-4 w-4 mr-1" /> Complete & Pay
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {filteredTerminations.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <XCircle className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No termination requests found</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === 'table' && (
+        <Card className="border-rose-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-rose-50/50">
+                <TableHead>Tenant</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Refund</TableHead>
+                <TableHead>Bank Info</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredTerminations.map((term) => (
+                <TableRow key={term.id} className="hover:bg-rose-50/50">
+                  <TableCell>
+                    <div>
+                      <p className="font-medium">{term.contract?.tenant?.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{term.contract?.property?.name}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-xs">
+                    <p className="truncate">{term.reason || 'No reason'}</p>
+                  </TableCell>
+                  <TableCell className="font-semibold text-rose-600">{(term.refundAmount || 0).toLocaleString()} ETB</TableCell>
+                  <TableCell>
+                    {term.bankName ? (
+                      <div className="text-sm">
+                        <p>{term.bankName}</p>
+                        <p className="text-muted-foreground">{term.bankAccountNumber}</p>
+                      </div>
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell>{getStatusBadge(term.status)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => { setSelectedTermination(term); setIsDetailDialogOpen(true); }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {term.status === 'PENDING' && isAccountant && (
+                        <>
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAccountantApprove(term.id)}>
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-red-600" onClick={() => { setSelectedTermination(term); setIsRejectDialogOpen(true); }}>
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                      {term.status === 'ACCOUNTANT_APPROVED' && isOwner && (
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleOwnerApprove(term.id)}>
+                          <Check className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {term.status === 'OWNER_APPROVED' && isAccountant && (
+                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleComplete(term.id)}>
+                          <Banknote className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredTerminations.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12">
+                    <XCircle className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No termination requests found</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-rose-600" />
+              Termination Request Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTermination && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-rose-100 to-red-100">
+                <div>
+                  <h3 className="text-xl font-bold">{selectedTermination.contract?.tenant?.fullName}</h3>
+                  <p className="text-muted-foreground">{selectedTermination.contract?.property?.name}</p>
+                </div>
+                {getStatusBadge(selectedTermination.status)}
+              </div>
+
+              {/* Progress */}
+              <div className="space-y-2 p-4 rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground mb-2">Approval Progress</p>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span>Steps Completed</span>
+                  <span>{Math.round(getStatusProgress(selectedTermination.status))}%</span>
+                </div>
+                <Progress value={getStatusProgress(selectedTermination.status)} className="h-2" />
+                <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                  <span>Pending</span>
+                  <span>Accountant</span>
+                  <span>Owner</span>
+                  <span>Done</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Refund Amount</p>
+                  <p className="text-xl font-bold text-rose-600">{(selectedTermination.refundAmount || 0).toLocaleString()} ETB</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Request Date</p>
+                  <p className="font-semibold">{new Date(selectedTermination.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground mb-1">Reason for Termination</p>
+                <p className="font-semibold">{selectedTermination.reason || 'No reason provided'}</p>
+              </div>
+
+              {selectedTermination.bankName && (
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground mb-2">Bank Details for Refund</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Bank:</span> {selectedTermination.bankName}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Account:</span> {selectedTermination.bankAccountNumber}
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Holder:</span> {selectedTermination.accountHolderName}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedTermination.rejectionReason && (
+                <div className="p-4 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-600 font-medium">Rejection Reason</p>
+                  <p className="text-red-700">{selectedTermination.rejectionReason}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="h-5 w-5" />
+              Reject Termination Request
+            </DialogTitle>
+            <DialogDescription>Please provide a reason for rejection</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Rejection Reason *</Label>
+              <Textarea 
+                value={rejectionReason} 
+                onChange={(e) => setRejectionReason(e.target.value)} 
+                placeholder="Enter the reason for rejecting this request..."
+                className="border-red-200"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsRejectDialogOpen(false); setSelectedTermination(null); setRejectionReason(''); }}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={handleReject}>Reject Request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
