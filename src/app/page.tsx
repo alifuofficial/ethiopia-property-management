@@ -1479,7 +1479,7 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
                       <p className="text-sm text-muted-foreground">{user.email}</p>
                     </div>
                   </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                  <div className="flex gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(user)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -1945,7 +1945,7 @@ function PropertiesView({ properties, setProperties }: { properties: Property[];
                       <p className="text-sm text-muted-foreground">{property.city}, {property.region}</p>
                     </div>
                   </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(property)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -2755,7 +2755,7 @@ function AssignmentsView({ assignments, setAssignments, users, properties }: {
                   </div>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive transition-all">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
@@ -2797,7 +2797,7 @@ function AssignmentsView({ assignments, setAssignments, users, properties }: {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 opacity-0 group-hover/item:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                        className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive transition-all"
                         onClick={() => {
                           const assignment = assignments.find(a => a.userId === user.id && a.propertyId === prop?.id);
                           if (assignment) handleDelete(assignment.id);
@@ -3156,15 +3156,16 @@ function UnitsView({ units, setUnits, properties }: {
                 <Plus className="mr-2 h-4 w-4" /> Add Unit
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
+            <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle className="flex items-center gap-2">
                   <DoorOpen className="h-5 w-5 text-primary" />
                   Add New Unit
                 </DialogTitle>
                 <DialogDescription>Create a new unit in a property</DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <ScrollArea className="flex-1 -mx-4">
+                <form onSubmit={handleSubmit} className="space-y-4 px-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Property</Label>
                   <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
@@ -3241,11 +3242,12 @@ function UnitsView({ units, setUnits, properties }: {
                   <Label className="text-sm font-medium">Description</Label>
                   <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Unit features, amenities..." className="border-primary/20" />
                 </div>
-                <DialogFooter className="gap-2">
-                  <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
-                  <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500">Create Unit</Button>
-                </DialogFooter>
-              </form>
+                </form>
+              </ScrollArea>
+              <DialogFooter className="gap-2 flex-shrink-0 px-4">
+                <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+                <Button type="submit" onClick={handleSubmit} className="bg-gradient-to-r from-primary to-emerald-500">Create Unit</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -3448,7 +3450,7 @@ function UnitsView({ units, setUnits, properties }: {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                   <Button variant="outline" size="sm" className="flex-1 border-primary/20 text-primary hover:bg-primary/5" onClick={() => openDetailDialog(unit)}>
                     <Eye className="h-4 w-4 mr-1" /> View
                   </Button>
@@ -3520,7 +3522,7 @@ function UnitsView({ units, setUnits, properties }: {
                   <TableCell className="font-medium">{unit.monthlyRent.toLocaleString()}</TableCell>
                   <TableCell>{getStatusBadge(unit.status)}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openDetailDialog(unit)}>
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -3565,90 +3567,92 @@ function UnitsView({ units, setUnits, properties }: {
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setSelectedUnit(null); resetForm(); } }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5 text-teal-600" />
               Edit Unit
             </DialogTitle>
             <DialogDescription>Update unit information</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Property</Label>
-              <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
-                <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {properties.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+          <ScrollArea className="flex-1 -mx-4">
+            <form id="edit-form" onSubmit={handleEdit} className="space-y-4 px-4">
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Unit Number</Label>
-                <Input value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} required className="border-teal-500/20" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Floor</Label>
-                <Input type="number" value={formData.floor} onChange={(e) => setFormData({ ...formData, floor: e.target.value })} className="border-teal-500/20" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Bedrooms</Label>
-                <Select value={formData.bedrooms} onValueChange={(v) => setFormData({ ...formData, bedrooms: v })}>
+                <Label className="text-sm font-medium">Property</Label>
+                <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
                   <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {[0, 1, 2, 3, 4, 5].map(n => (
-                      <SelectItem key={n} value={n.toString()}>{n === 0 ? 'Studio' : n}</SelectItem>
+                    {properties.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Unit Number</Label>
+                  <Input value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} required className="border-teal-500/20" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Floor</Label>
+                  <Input type="number" value={formData.floor} onChange={(e) => setFormData({ ...formData, floor: e.target.value })} className="border-teal-500/20" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Bedrooms</Label>
+                  <Select value={formData.bedrooms} onValueChange={(v) => setFormData({ ...formData, bedrooms: v })}>
+                    <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[0, 1, 2, 3, 4, 5].map(n => (
+                        <SelectItem key={n} value={n.toString()}>{n === 0 ? 'Studio' : n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Bathrooms</Label>
+                  <Select value={formData.bathrooms} onValueChange={(v) => setFormData({ ...formData, bathrooms: v })}>
+                    <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4].map(n => (
+                        <SelectItem key={n} value={n.toString()}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Area (sqm)</Label>
+                  <Input type="number" value={formData.area} onChange={(e) => setFormData({ ...formData, area: e.target.value })} className="border-teal-500/20" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Monthly Rent (ETB)</Label>
+                  <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-teal-500/20" />
+                </div>
+              </div>
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Bathrooms</Label>
-                <Select value={formData.bathrooms} onValueChange={(v) => setFormData({ ...formData, bathrooms: v })}>
+                <Label className="text-sm font-medium">Status</Label>
+                <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
                   <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4].map(n => (
-                      <SelectItem key={n} value={n.toString()}>{n}</SelectItem>
-                    ))}
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="occupied">Occupied</SelectItem>
+                    <SelectItem value="maintenance">Under Maintenance</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Area (sqm)</Label>
-                <Input type="number" value={formData.area} onChange={(e) => setFormData({ ...formData, area: e.target.value })} className="border-teal-500/20" />
+                <Label className="text-sm font-medium">Description</Label>
+                <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="border-teal-500/20" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Monthly Rent (ETB)</Label>
-                <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-teal-500/20" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Status</Label>
-              <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
-                <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="available">Available</SelectItem>
-                  <SelectItem value="occupied">Occupied</SelectItem>
-                  <SelectItem value="maintenance">Under Maintenance</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Description</Label>
-              <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="border-teal-500/20" />
-            </div>
-            <DialogFooter className="gap-2">
-              <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedUnit(null); resetForm(); }}>Cancel</Button>
-              <Button type="submit" className="bg-gradient-to-r from-teal-500 to-teal-600">Update Unit</Button>
-            </DialogFooter>
-          </form>
+            </form>
+          </ScrollArea>
+          <DialogFooter className="gap-2 flex-shrink-0 px-4">
+            <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedUnit(null); resetForm(); }}>Cancel</Button>
+            <Button type="submit" form="edit-form" className="bg-gradient-to-r from-teal-500 to-teal-600">Update Unit</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
