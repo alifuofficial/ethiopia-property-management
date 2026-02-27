@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
           userId: user.id,
           fullName,
           phone,
+          email: email, // Also save email to tenant table
           address: address || null,
           idType: idType || null,
           idNumber: idNumber || null,

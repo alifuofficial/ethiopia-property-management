@@ -149,3 +149,25 @@ Stage Summary:
 - Quick Actions navigate to respective pages (Properties, Tenants, Contracts, Payments)
 - Recent Activity shows latest payments, contracts, tenants, and invoices
 - All stats cards show real numbers with calculated trends
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Fix tenant creation and updating functionality
+
+Work Log:
+- Investigated tenant API - found missing [id] endpoint for PUT/DELETE operations
+- Created new API endpoint `/api/tenants/[id]/route.ts` with:
+  - GET: Fetch single tenant by ID
+  - PUT: Update tenant and associated user account
+  - DELETE: Delete tenant (with active contract check) and associated user
+- Updated tenant creation API to also save email to tenant table
+- Added validation for email conflicts when updating
+- Added transaction support for atomic updates to both user and tenant tables
+- Added check to prevent deletion of tenants with active contracts
+
+Stage Summary:
+- Tenant creation now properly saves email to both user and tenant tables
+- Tenant update (PUT) endpoint working - can update all tenant fields
+- Tenant delete (DELETE) endpoint working - prevents deletion if active contracts exist
+- All tenant CRUD operations now fully functional
