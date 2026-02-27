@@ -28,7 +28,7 @@ import {
   ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown, Calculator,
   ChevronDown, ChevronRight, LayoutGrid, Shield, UserCog, KeyRound,
   Landmark, HomeIcon, UserCircle, FileSignature, DollarSignIcon, ReceiptIcon,
-  CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers, Globe, CalendarDays
+  CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers, Globe, CalendarDays, Percent
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
@@ -6753,8 +6753,15 @@ function SettingsView({ settings, setSettings }: {
     emailNotificationEnabled: settings?.emailNotificationEnabled ?? true,
     telegramNotificationEnabled: settings?.telegramNotificationEnabled ?? false,
     whatsappNotificationEnabled: settings?.whatsappNotificationEnabled ?? false,
+    // Advance Payment Configuration
+    advancePaymentEnabled: settings?.advancePaymentEnabled ?? true,
     advancePaymentMaxMonths: settings?.advancePaymentMaxMonths ?? 6,
+    // Late Payment Penalty Configuration
+    latePaymentPenaltyEnabled: settings?.latePaymentPenaltyEnabled ?? true,
+    latePaymentPenaltyType: settings?.latePaymentPenaltyType ?? 'PERCENTAGE',
     latePaymentPenaltyPercent: settings?.latePaymentPenaltyPercent ?? 5,
+    latePaymentPenaltyFixedAmount: settings?.latePaymentPenaltyFixedAmount ?? 0,
+    latePaymentPenaltyGraceDays: settings?.latePaymentPenaltyGraceDays ?? 0,
     // Tax Settings
     taxEnabled: settings?.taxEnabled ?? false,
     taxName: settings?.taxName ?? 'VAT',
@@ -6880,7 +6887,11 @@ function SettingsView({ settings, setSettings }: {
       case 'general': return formData.tenantSelfServiceEnabled ? 'Enabled' : 'Disabled';
       case 'notifications': return [formData.emailNotificationEnabled, formData.smsNotificationEnabled, formData.telegramNotificationEnabled, formData.whatsappNotificationEnabled].filter(Boolean).length + ' active';
       case 'sms': return smsSettings.hasApiKey ? 'Connected' : 'Setup';
-      case 'payments': return formData.advancePaymentMaxMonths + ' mo max';
+      case 'payments': 
+        const parts = [];
+        if (formData.advancePaymentEnabled) parts.push(`${formData.advancePaymentMaxMonths}mo advance`);
+        if (formData.latePaymentPenaltyEnabled) parts.push(formData.latePaymentPenaltyType === 'PERCENTAGE' ? `${formData.latePaymentPenaltyPercent}% penalty` : `${formData.latePaymentPenaltyFixedAmount} ETB penalty`);
+        return parts.length > 0 ? parts.join(', ') : 'Disabled';
       case 'tax': return formData.taxEnabled ? `${formData.taxRate}% ${formData.taxName}` : 'Off';
       case 'integrations': return 'Coming soon';
       default: return '';
@@ -7225,54 +7236,169 @@ function SettingsView({ settings, setSettings }: {
                 </div>
                 <div>
                   <CardTitle>Payment Settings</CardTitle>
-                  <CardDescription>Configure payment rules and penalties</CardDescription>
+                  <CardDescription>Configure advance payments and late payment penalties</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-6">
               <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 border border-amber-200/50">
-                    <div className="flex items-center gap-3 mb-4">
+                {/* Advance Payment Section */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 border border-amber-200/50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
                         <Calendar className="h-5 w-5 text-amber-600" />
                       </div>
                       <div>
                         <p className="font-semibold">Advance Payment</p>
-                        <p className="text-sm text-muted-foreground">Maximum months in advance</p>
+                        <p className="text-sm text-muted-foreground">Allow tenants to pay rent in advance</p>
                       </div>
                     </div>
-                    <Input
-                      type="number"
-                      value={formData.advancePaymentMaxMonths}
-                      onChange={(e) => setFormData({ ...formData, advancePaymentMaxMonths: parseInt(e.target.value) })}
-                      className="border-amber-500/20 focus:border-amber-500 text-lg font-semibold"
+                    <Switch
+                      checked={formData.advancePaymentEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, advancePaymentEnabled: v })}
                     />
-                    <p className="text-xs text-muted-foreground mt-2">Tenants can pay up to this many months in advance</p>
                   </div>
+                  
+                  {formData.advancePaymentEnabled && (
+                    <div className="mt-4 pt-4 border-t border-amber-200/50">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <Label className="font-medium mb-2 block">Maximum Months in Advance</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              max={24}
+                              value={formData.advancePaymentMaxMonths}
+                              onChange={(e) => setFormData({ ...formData, advancePaymentMaxMonths: parseInt(e.target.value) || 1 })}
+                              className="border-amber-500/20 focus:border-amber-500 w-24"
+                            />
+                            <span className="text-sm text-muted-foreground">months</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Tenants can pay up to this many months in advance</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-amber-100/50 dark:bg-amber-900/20 text-sm">
+                          <p className="font-medium text-amber-700 dark:text-amber-400">Example</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formData.advancePaymentMaxMonths} months = max {formData.advancePaymentMaxMonths}x monthly rent upfront
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                  <div className="p-4 rounded-xl bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/10 dark:to-rose-900/10 border border-red-200/50">
-                    <div className="flex items-center gap-3 mb-4">
+                {/* Late Payment Penalty Section */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/10 dark:to-rose-900/10 border border-red-200/50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
                         <AlertTriangle className="h-5 w-5 text-red-600" />
                       </div>
                       <div>
                         <p className="font-semibold">Late Payment Penalty</p>
-                        <p className="text-sm text-muted-foreground">Percentage penalty fee</p>
+                        <p className="text-sm text-muted-foreground">Apply penalties to overdue payments</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={formData.latePaymentPenaltyPercent}
-                        onChange={(e) => setFormData({ ...formData, latePaymentPenaltyPercent: parseFloat(e.target.value) })}
-                        className="border-red-500/20 focus:border-red-500 text-lg font-semibold"
-                      />
-                      <span className="text-lg font-semibold text-muted-foreground">%</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">Applied to overdue invoices</p>
+                    <Switch
+                      checked={formData.latePaymentPenaltyEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, latePaymentPenaltyEnabled: v })}
+                    />
                   </div>
+                  
+                  {formData.latePaymentPenaltyEnabled && (
+                    <div className="mt-4 pt-4 border-t border-red-200/50 space-y-4">
+                      {/* Penalty Type Selection */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label className="font-medium mb-2 block">Penalty Type</Label>
+                          <Select
+                            value={formData.latePaymentPenaltyType}
+                            onValueChange={(v) => setFormData({ ...formData, latePaymentPenaltyType: v as 'PERCENTAGE' | 'FIXED' })}
+                          >
+                            <SelectTrigger className="border-red-500/20 focus:border-red-500">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="PERCENTAGE">
+                                <div className="flex items-center gap-2">
+                                  <Percent className="h-4 w-4" />
+                                  Percentage (%)
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="FIXED">
+                                <div className="flex items-center gap-2">
+                                  <DollarSign className="h-4 w-4" />
+                                  Fixed Amount (ETB)
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <div>
+                          <Label className="font-medium mb-2 block">
+                            {formData.latePaymentPenaltyType === 'PERCENTAGE' ? 'Penalty Rate' : 'Fixed Amount'}
+                          </Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              step={formData.latePaymentPenaltyType === 'PERCENTAGE' ? '0.1' : '1'}
+                              min={0}
+                              value={formData.latePaymentPenaltyType === 'PERCENTAGE' 
+                                ? formData.latePaymentPenaltyPercent 
+                                : formData.latePaymentPenaltyFixedAmount}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value) || 0;
+                                if (formData.latePaymentPenaltyType === 'PERCENTAGE') {
+                                  setFormData({ ...formData, latePaymentPenaltyPercent: value });
+                                } else {
+                                  setFormData({ ...formData, latePaymentPenaltyFixedAmount: value });
+                                }
+                              }}
+                              className="border-red-500/20 focus:border-red-500"
+                            />
+                            <span className="text-sm font-medium">
+                              {formData.latePaymentPenaltyType === 'PERCENTAGE' ? '%' : 'ETB'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Grace Period */}
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <Label className="font-medium mb-2 block">Grace Period (Days)</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={30}
+                              value={formData.latePaymentPenaltyGraceDays}
+                              onChange={(e) => setFormData({ ...formData, latePaymentPenaltyGraceDays: parseInt(e.target.value) || 0 })}
+                              className="border-red-500/20 focus:border-red-500 w-24"
+                            />
+                            <span className="text-sm text-muted-foreground">days after due date</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">No penalty applied during grace period</p>
+                        </div>
+                      </div>
+                      
+                      {/* Summary */}
+                      <div className="p-3 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-sm">
+                        <p className="font-medium text-red-700 dark:text-red-400">Penalty Summary</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formData.latePaymentPenaltyGraceDays > 0 
+                            ? `After ${formData.latePaymentPenaltyGraceDays} grace days, `
+                            : 'Immediately after due date, '}
+                          {formData.latePaymentPenaltyType === 'PERCENTAGE' 
+                            ? `${formData.latePaymentPenaltyPercent}% penalty will be added to overdue invoices`
+                            : `${formData.latePaymentPenaltyFixedAmount} ETB fixed penalty will be added to overdue invoices`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end pt-4 border-t border-border/50">

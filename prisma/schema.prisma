@@ -96,8 +96,17 @@ model SystemSettings {
   emailNotificationEnabled Boolean @default(true)
   telegramNotificationEnabled Boolean @default(false)
   whatsappNotificationEnabled Boolean @default(false)
-  advancePaymentMaxMonths  Int     @default(6)
-  latePaymentPenaltyPercent Float  @default(5.0)
+  
+  // Advance Payment Configuration
+  advancePaymentEnabled   Boolean  @default(true)
+  advancePaymentMaxMonths Int      @default(6)
+  
+  // Late Payment Penalty Configuration
+  latePaymentPenaltyEnabled Boolean @default(true)
+  latePaymentPenaltyType    String  @default("PERCENTAGE") // PERCENTAGE or FIXED
+  latePaymentPenaltyPercent Float   @default(5.0)
+  latePaymentPenaltyFixedAmount Float @default(0)
+  latePaymentPenaltyGraceDays Int   @default(0) // Grace period before penalty applies
   
   // SMS Ethiopia API Configuration
   smsApiKey             String?  // SMSEthiopia API Key

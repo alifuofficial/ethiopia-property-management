@@ -183,8 +183,15 @@ export interface SystemSettings {
   emailNotificationEnabled: boolean;
   telegramNotificationEnabled: boolean;
   whatsappNotificationEnabled: boolean;
+  // Advance Payment Configuration
+  advancePaymentEnabled: boolean;
   advancePaymentMaxMonths: number;
+  // Late Payment Penalty Configuration
+  latePaymentPenaltyEnabled: boolean;
+  latePaymentPenaltyType: 'PERCENTAGE' | 'FIXED';
   latePaymentPenaltyPercent: number;
+  latePaymentPenaltyFixedAmount: number;
+  latePaymentPenaltyGraceDays: number;
   // Tax Configuration
   taxEnabled: boolean;
   taxName: string;
