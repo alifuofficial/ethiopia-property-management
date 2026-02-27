@@ -99,7 +99,8 @@ model SystemSettings {
   
   // Advance Payment Configuration
   advancePaymentEnabled   Boolean  @default(true)
-  advancePaymentMaxMonths Int      @default(6)
+  advancePaymentMinMonths Int      @default(1)    // Minimum months tenant must pay in advance
+  advancePaymentMaxMonths Int      @default(6)    // Maximum months (limited by contract end date)
   
   // Late Payment Penalty Configuration
   latePaymentPenaltyEnabled Boolean @default(true)

@@ -185,6 +185,7 @@ export interface SystemSettings {
   whatsappNotificationEnabled: boolean;
   // Advance Payment Configuration
   advancePaymentEnabled: boolean;
+  advancePaymentMinMonths: number;
   advancePaymentMaxMonths: number;
   // Late Payment Penalty Configuration
   latePaymentPenaltyEnabled: boolean;

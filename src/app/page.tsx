@@ -6755,6 +6755,7 @@ function SettingsView({ settings, setSettings }: {
     whatsappNotificationEnabled: settings?.whatsappNotificationEnabled ?? false,
     // Advance Payment Configuration
     advancePaymentEnabled: settings?.advancePaymentEnabled ?? true,
+    advancePaymentMinMonths: settings?.advancePaymentMinMonths ?? 1,
     advancePaymentMaxMonths: settings?.advancePaymentMaxMonths ?? 6,
     // Late Payment Penalty Configuration
     latePaymentPenaltyEnabled: settings?.latePaymentPenaltyEnabled ?? true,
@@ -6889,7 +6890,7 @@ function SettingsView({ settings, setSettings }: {
       case 'sms': return smsSettings.hasApiKey ? 'Connected' : 'Setup';
       case 'payments': 
         const parts = [];
-        if (formData.advancePaymentEnabled) parts.push(`${formData.advancePaymentMaxMonths}mo advance`);
+        if (formData.advancePaymentEnabled) parts.push(`${formData.advancePaymentMinMonths}-${formData.advancePaymentMaxMonths}mo advance`);
         if (formData.latePaymentPenaltyEnabled) parts.push(formData.latePaymentPenaltyType === 'PERCENTAGE' ? `${formData.latePaymentPenaltyPercent}% penalty` : `${formData.latePaymentPenaltyFixedAmount} ETB penalty`);
         return parts.length > 0 ? parts.join(', ') : 'Disabled';
       case 'tax': return formData.taxEnabled ? `${formData.taxRate}% ${formData.taxName}` : 'Off';
@@ -7261,27 +7262,70 @@ function SettingsView({ settings, setSettings }: {
                   </div>
                   
                   {formData.advancePaymentEnabled && (
-                    <div className="mt-4 pt-4 border-t border-amber-200/50">
-                      <div className="flex items-center gap-4">
-                        <div className="flex-1">
-                          <Label className="font-medium mb-2 block">Maximum Months in Advance</Label>
+                    <div className="mt-4 pt-4 border-t border-amber-200/50 space-y-4">
+                      {/* Minimum and Maximum Months */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label className="font-medium mb-2 block">Minimum Months Required</Label>
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               min={1}
-                              max={24}
-                              value={formData.advancePaymentMaxMonths}
-                              onChange={(e) => setFormData({ ...formData, advancePaymentMaxMonths: parseInt(e.target.value) || 1 })}
+                              max={formData.advancePaymentMaxMonths}
+                              value={formData.advancePaymentMinMonths}
+                              onChange={(e) => {
+                                const value = Math.min(parseInt(e.target.value) || 1, formData.advancePaymentMaxMonths);
+                                setFormData({ ...formData, advancePaymentMinMonths: value });
+                              }}
                               className="border-amber-500/20 focus:border-amber-500 w-24"
                             />
                             <span className="text-sm text-muted-foreground">months</span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">Tenants can pay up to this many months in advance</p>
+                          <p className="text-xs text-muted-foreground mt-1">Tenant must pay at least this many months upfront</p>
                         </div>
-                        <div className="p-3 rounded-lg bg-amber-100/50 dark:bg-amber-900/20 text-sm">
-                          <p className="font-medium text-amber-700 dark:text-amber-400">Example</p>
+                        
+                        <div>
+                          <Label className="font-medium mb-2 block">Maximum Months Allowed</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={formData.advancePaymentMinMonths}
+                              max={24}
+                              value={formData.advancePaymentMaxMonths}
+                              onChange={(e) => {
+                                const value = Math.max(parseInt(e.target.value) || 6, formData.advancePaymentMinMonths);
+                                setFormData({ ...formData, advancePaymentMaxMonths: value });
+                              }}
+                              className="border-amber-500/20 focus:border-amber-500 w-24"
+                            />
+                            <span className="text-sm text-muted-foreground">months</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Upper limit (capped by contract end date)</p>
+                        </div>
+                      </div>
+                      
+                      {/* Info Box */}
+                      <div className="p-3 rounded-lg bg-amber-100/50 dark:bg-amber-900/20 text-sm space-y-2">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="font-medium text-amber-700 dark:text-amber-400">Important</p>
+                            <p className="text-xs text-muted-foreground">
+                              The actual maximum advance payment is limited by the tenant's contract end date. 
+                              For example, if a contract has 4 months remaining, the tenant can only pay up to 4 months in advance, 
+                              even if the system maximum is {formData.advancePaymentMaxMonths} months.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Summary */}
+                      <div className="flex items-center gap-4 p-3 rounded-lg bg-amber-100/30 dark:bg-amber-900/10">
+                        <div className="flex-1">
+                          <p className="font-medium text-amber-700 dark:text-amber-400">Advance Payment Summary</p>
                           <p className="text-xs text-muted-foreground">
-                            {formData.advancePaymentMaxMonths} months = max {formData.advancePaymentMaxMonths}x monthly rent upfront
+                            Tenants must pay between <strong>{formData.advancePaymentMinMonths} to {formData.advancePaymentMaxMonths} months</strong> in advance,
+                            limited by their contract end date.
                           </p>
                         </div>
                       </div>
