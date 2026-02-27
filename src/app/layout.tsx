@@ -14,24 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
+  title: "Ethiopia Property Management System",
+  description: "Comprehensive property management system for the Ethiopia market. Manage properties, tenants, contracts, invoices, and payments.",
+  keywords: ["Property Management", "Ethiopia", "Real Estate", "Rentals", "Contracts", "Invoices", "Payments"],
+  authors: [{ name: "Property Management Team" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
-  openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M3 21h18M9 21V11.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V21M3 7l9-4 9 4M4 10v11M20 10v11'/></svg>",
   },
 };
 

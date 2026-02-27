@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,20 +10,299 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// User roles in the system
+enum UserRole {
+  SYSTEM_ADMIN
+  OWNER
+  PROPERTY_ADMIN
+  ACCOUNTANT
+  TENANT
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// Contract status
+enum ContractStatus {
+  DRAFT
+  UNDER_REVIEW
+  ACTIVE
+  PENDING_TERMINATION
+  TERMINATED
+  CANCELLED
+}
+
+// Payment status
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Payment type
+enum PaymentType {
+  ADVANCE
+  MONTHLY
+  REFUND
+}
+
+// Invoice status
+enum InvoiceStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+}
+
+// Termination request status
+enum TerminationStatus {
+  PENDING
+  ACCOUNTANT_APPROVED
+  OWNER_APPROVED
+  COMPLETED
+  REJECTED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String
+  name          String
+  phone         String?
+  role          UserRole
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  propertyAssignments  PropertyAssignment[]
+  tenants              Tenant[]
+  contractsCreated     Contract[]            @relation("ContractCreator")
+  terminationRequests  ContractTerminationRequest[]
+  paymentsApproved     Payment[]             @relation("PaymentApprover")
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+model SystemSettings {
+  id                    String   @id @default(cuid())
+  tenantSelfServiceEnabled Boolean @default(false)
+  smsNotificationEnabled   Boolean @default(false)
+  emailNotificationEnabled Boolean @default(true)
+  telegramNotificationEnabled Boolean @default(false)
+  whatsappNotificationEnabled Boolean @default(false)
+  advancePaymentMaxMonths  Int     @default(6)
+  latePaymentPenaltyPercent Float  @default(5.0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model Property {
+  id            String   @id @default(cuid())
+  name          String
+  address       String
+  city          String
+  region        String
+  totalUnits    Int      @default(0)
+  description   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  units         Unit[]
+  assignments   PropertyAssignment[]
+  contracts     Contract[]
+
+  @@map("properties")
+}
+
+model Unit {
+  id            String   @id @default(cuid())
+  propertyId    String
+  unitNumber    String
+  floor         Int?
+  bedrooms      Int      @default(1)
+  bathrooms     Int      @default(1)
+  area          Float?   // in square meters
+  monthlyRent   Float
+  status        String   @default("available") // available, occupied, maintenance
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  property      Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  contractUnits ContractUnit[]
+
+  @@unique([propertyId, unitNumber])
+  @@map("units")
+}
+
+model PropertyAssignment {
+  id            String   @id @default(cuid())
+  userId        String
+  propertyId    String
+  assignedAt    DateTime @default(now())
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property      Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("property_assignments")
+}
+
+model Tenant {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  fullName      String
+  phone         String
+  email         String?
+  address       String?
+  idType        String?  // passport, national_id, etc.
+  idNumber      String?
+  emergencyContact String?
+  emergencyPhone  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contracts     Contract[]
+
+  @@map("tenants")
+}
+
+model Contract {
+  id                String   @id @default(cuid())
+  tenantId          String
+  propertyId        String
+  createdById       String
+  startDate         DateTime
+  endDate           DateTime
+  monthlyRent       Float
+  securityDeposit   Float    @default(0)
+  advancePayment    Float    @default(0)
+  remainingAdvance  Float    @default(0)
+  status            ContractStatus @default(DRAFT)
+  legalAgreementUrl String?  // PDF URL
+  notes             String?
+  terminationDate   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property          Property  @relation(fields: [propertyId], references: [id])
+  createdBy         User      @relation("ContractCreator", fields: [createdById], references: [id])
+  contractUnits     ContractUnit[]
+  invoices          Invoice[]
+  payments          Payment[]
+  terminationRequest ContractTerminationRequest?
+
+  @@map("contracts")
+}
+
+model ContractUnit {
+  id            String   @id @default(cuid())
+  contractId    String
+  unitId        String
+  monthlyRent   Float
+  createdAt     DateTime @default(now())
+
+  // Relations
+  contract      Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  unit          Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, unitId])
+  @@map("contract_units")
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  contractId        String
+  invoiceNumber     String   @unique
+  amount            Float
+  dueDate           DateTime
+  periodStart       DateTime
+  periodEnd         DateTime
+  status            InvoiceStatus @default(PENDING)
+  paidAmount        Float    @default(0)
+  notes             String?
+  sentVia           String?  // sms, email, telegram, whatsapp
+  sentAt            DateTime?
+  paymentUrl        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  contract          Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  payments          Payment[]
+
+  @@map("invoices")
+}
+
+model Payment {
+  id                String   @id @default(cuid())
+  invoiceId         String?
+  contractId        String
+  amount            Float
+  paymentType       PaymentType
+  status            PaymentStatus @default(PENDING)
+  paymentMethod     String?  // chapa, telebirr, bank_transfer, cash
+  transactionId     String?
+  receiptUrl        String?
+  paidAt            DateTime?
+  approvedById      String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  invoice           Invoice?  @relation(fields: [invoiceId], references: [id])
+  contract          Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  approvedBy        User?     @relation("PaymentApprover", fields: [approvedById], references: [id])
+
+  @@map("payments")
+}
+
+model ContractTerminationRequest {
+  id                String   @id @default(cuid())
+  contractId        String   @unique
+  requestedById     String
+  reason            String
+  refundAmount      Float?
+  bankAccountNumber String?
+  bankName          String?
+  accountHolderName String?
+  status            TerminationStatus @default(PENDING)
+  receiptUrl        String?
+  rejectionReason   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  contract          Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  requestedBy       User      @relation(fields: [requestedById], references: [id])
+
+  @@map("contract_termination_requests")
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  userId        String
+  action        String
+  entityType    String
+  entityId      String
+  details       String?  // JSON string
+  createdAt     DateTime @default(now())
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
 }
