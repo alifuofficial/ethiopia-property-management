@@ -398,7 +398,7 @@ export default function PropertyManagementSystem() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-6">
-          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} />}
+          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} />}
           {currentView === 'users' && <UsersView users={users} setUsers={setUsers} />}
           {currentView === 'properties' && <PropertiesView properties={properties} setProperties={setProperties} />}
           {currentView === 'assignments' && <AssignmentsView assignments={assignments} setAssignments={setAssignments} users={users} properties={properties} />}
@@ -754,11 +754,12 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 // Dashboard View
-function DashboardView({ stats, user, assignments, properties }: { 
+function DashboardView({ stats, user, assignments, properties, onNavigate }: { 
   stats: DashboardStats | null; 
   user: User | null;
   assignments: PropertyAssignment[];
   properties: Property[];
+  onNavigate: (view: string) => void;
 }) {
   if (!stats) return <div>Loading...</div>;
 
@@ -771,40 +772,52 @@ function DashboardView({ stats, user, assignments, properties }: {
   const occupancyRate = stats.totalUnits > 0 ? Math.round((stats.occupiedUnits / stats.totalUnits) * 100) : 0;
   const availableRate = stats.totalUnits > 0 ? Math.round((stats.availableUnits / stats.totalUnits) * 100) : 0;
 
-  // Chart data - Green theme
+  // Chart data - Use real data from API
   const occupancyData = [
     { name: 'Occupied', value: stats.occupiedUnits, fill: '#22c55e' },
     { name: 'Available', value: stats.availableUnits, fill: '#86efac' },
   ];
 
-  const revenueData = [
-    { month: 'Jan', revenue: 45000, expenses: 12000 },
-    { month: 'Feb', revenue: 52000, expenses: 15000 },
-    { month: 'Mar', revenue: 48000, expenses: 13000 },
-    { month: 'Apr', revenue: 61000, expenses: 14000 },
-    { month: 'May', revenue: 55000, expenses: 16000 },
-    { month: 'Jun', revenue: 67000, expenses: 15000 },
-    { month: 'Jul', revenue: 72000, expenses: 17000 },
-  ];
+  // Use real monthly revenue data or fallback to empty
+  const revenueData = stats.monthlyRevenue?.length > 0 
+    ? stats.monthlyRevenue 
+    : [{ month: 'No Data', revenue: 0, expenses: 0 }];
 
-  const paymentStatusData = [
-    { name: 'Approved', value: Math.max(1, stats.pendingPayments > 0 ? stats.pendingPayments * 3 : 5), fill: '#22c55e' },
-    { name: 'Pending', value: stats.pendingPayments || 1, fill: '#f59e0b' },
-    { name: 'Overdue', value: stats.overdueInvoices || 0, fill: '#ef4444' },
-  ];
+  // Use real payment status data or fallback
+  const paymentStatusData = stats.paymentStatusData?.length > 0
+    ? stats.paymentStatusData
+    : [
+        { name: 'Approved', value: stats.approvedPayments || 0, fill: '#22c55e' },
+        { name: 'Pending', value: stats.pendingPayments || 0, fill: '#f59e0b' },
+        { name: 'Rejected', value: stats.rejectedPayments || 0, fill: '#ef4444' },
+      ];
 
-  const contractData = [
-    { name: 'Active', value: stats.activeContracts, fill: '#22c55e' },
-    { name: 'Pending', value: Math.max(0, stats.activeContracts > 2 ? 2 : 0), fill: '#14b8a6' },
-    { name: 'Terminated', value: Math.max(0, stats.activeContracts > 3 ? 1 : 0), fill: '#6b7280' },
-  ];
+  // Use real contract status data or fallback
+  const contractData = stats.contractStatusData?.length > 0
+    ? stats.contractStatusData
+    : [
+        { name: 'Active', value: stats.activeContracts || 0, fill: '#22c55e' },
+        { name: 'Pending', value: stats.pendingContracts || 0, fill: '#14b8a6' },
+        { name: 'Terminated', value: stats.terminatedContracts || 0, fill: '#6b7280' },
+      ];
 
-  const monthlyTrend = [
-    { name: 'Week 1', collections: 85000, target: 80000 },
-    { name: 'Week 2', collections: 92000, target: 85000 },
-    { name: 'Week 3', collections: 78000, target: 90000 },
-    { name: 'Week 4', collections: 105000, target: 95000 },
-  ];
+  // Use real monthly trend data or fallback
+  const monthlyTrend = stats.monthlyTrend?.length > 0
+    ? stats.monthlyTrend
+    : [{ name: 'No Data', collections: 0, target: 0 }];
+
+  // Calculate revenue trend percentage
+  const calculateRevenueTrend = () => {
+    if (stats.monthlyRevenue?.length >= 2) {
+      const lastMonth = stats.monthlyRevenue[stats.monthlyRevenue.length - 1]?.revenue || 0;
+      const prevMonth = stats.monthlyRevenue[stats.monthlyRevenue.length - 2]?.revenue || 1;
+      if (prevMonth > 0) {
+        const percent = ((lastMonth - prevMonth) / prevMonth * 100).toFixed(1);
+        return percent;
+      }
+    }
+    return '0';
+  };
 
   // Role-specific welcome message
   const getWelcomeMessage = () => {
@@ -908,7 +921,7 @@ function DashboardView({ stats, user, assignments, properties }: {
           title="Active Contracts" 
           value={stats.activeContracts} 
           icon={<FileText className="h-5 w-5" />}
-          trend="+3 this month"
+          trend={stats.pendingContracts > 0 ? `${stats.pendingContracts} pending` : undefined}
           trendUp={true}
           color="teal"
         />
@@ -916,8 +929,8 @@ function DashboardView({ stats, user, assignments, properties }: {
           title="Total Revenue" 
           value={`${(stats.totalRevenue || 0).toLocaleString()} ETB`}
           icon={<DollarSign className="h-5 w-5" />}
-          trend="+12% vs last month"
-          trendUp={true}
+          trend={calculateRevenueTrend() !== '0' ? `${calculateRevenueTrend()}% vs last month` : undefined}
+          trendUp={parseFloat(calculateRevenueTrend()) >= 0}
           color="lime"
         />
       </div>
@@ -934,8 +947,8 @@ function DashboardView({ stats, user, assignments, properties }: {
           title="Pending Payments" 
           value={stats.pendingPayments} 
           icon={<Clock className="h-5 w-5" />}
-          trend="Needs attention"
-          trendUp={false}
+          trend={stats.pendingPayments > 0 ? 'Needs attention' : 'All clear'}
+          trendUp={stats.pendingPayments === 0}
           color="amber"
         />
         <StatsCard 
@@ -958,13 +971,13 @@ function DashboardView({ stats, user, assignments, properties }: {
               <CardDescription>Monthly revenue vs expenses</CardDescription>
             </div>
             <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
-              <TrendingUp className="h-3 w-3 mr-1" /> +18.5%
+              <TrendingUp className="h-3 w-3 mr-1" /> {calculateRevenueTrend()}%
             </Badge>
           </CardHeader>
           <CardContent>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueData}>
+                <AreaChart data={revenueData.length > 0 ? revenueData : [{ month: 'No Data', revenue: 0, expenses: 0 }]}>
                   <defs>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
@@ -1232,13 +1245,74 @@ function DashboardView({ stats, user, assignments, properties }: {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <QuickActionButton icon={<Plus className="h-4 w-4" />} label="Add Property" color="teal" />
-            <QuickActionButton icon={<Users className="h-4 w-4" />} label="Add Tenant" color="purple" />
-            <QuickActionButton icon={<FileText className="h-4 w-4" />} label="New Contract" color="orange" />
-            <QuickActionButton icon={<Receipt className="h-4 w-4" />} label="Create Invoice" color="green" />
+            <QuickActionButton icon={<Plus className="h-4 w-4" />} label="Add Property" color="teal" onClick={() => onNavigate('properties')} />
+            <QuickActionButton icon={<Users className="h-4 w-4" />} label="Add Tenant" color="purple" onClick={() => onNavigate('tenants')} />
+            <QuickActionButton icon={<FileText className="h-4 w-4" />} label="New Contract" color="orange" onClick={() => onNavigate('contracts')} />
+            <QuickActionButton icon={<Receipt className="h-4 w-4" />} label="View Payments" color="green" onClick={() => onNavigate('payments')} />
           </div>
         </CardContent>
       </Card>
+
+      {/* Recent Activity */}
+      {stats.recentActivity && stats.recentActivity.length > 0 && (
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Recent Activity
+            </CardTitle>
+            <CardDescription>Latest updates across your properties</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.recentActivity.slice(0, 8).map((activity) => (
+                <div key={activity.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
+                  <div className={`p-2 rounded-lg ${
+                    activity.type === 'payment' ? 'bg-green-500/10 text-green-600' :
+                    activity.type === 'contract' ? 'bg-teal-500/10 text-teal-600' :
+                    activity.type === 'tenant' ? 'bg-purple-500/10 text-purple-600' :
+                    'bg-amber-500/10 text-amber-600'
+                  }`}>
+                    {activity.type === 'payment' && <DollarSign className="h-4 w-4" />}
+                    {activity.type === 'contract' && <FileText className="h-4 w-4" />}
+                    {activity.type === 'tenant' && <Users className="h-4 w-4" />}
+                    {activity.type === 'invoice' && <Receipt className="h-4 w-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-sm truncate">{activity.title}</p>
+                      {activity.status && (
+                        <Badge variant="outline" className={`text-xs shrink-0 ${
+                          activity.status === 'APPROVED' || activity.status === 'ACTIVE' || activity.status === 'PAID' 
+                            ? 'border-green-500/30 text-green-600' 
+                            : activity.status === 'PENDING' || activity.status === 'UNDER_REVIEW'
+                            ? 'border-amber-500/30 text-amber-600'
+                            : activity.status === 'REJECTED' || activity.status === 'OVERDUE'
+                            ? 'border-red-500/30 text-red-600'
+                            : ''
+                        }`}>
+                          {activity.status}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{activity.description}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      {activity.amount && (
+                        <span className="text-xs font-medium text-primary">
+                          {activity.amount.toLocaleString()} ETB
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(activity.date).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -1303,16 +1377,18 @@ function StatsCard({
   );
 }
 
-function QuickActionButton({ icon, label, color }: { icon: React.ReactNode; label: string; color: 'green' | 'emerald' | 'teal' | 'lime' }) {
+function QuickActionButton({ icon, label, color, onClick }: { icon: React.ReactNode; label: string; color: 'green' | 'emerald' | 'teal' | 'lime' | 'purple' | 'orange'; onClick?: () => void }) {
   const colorMap = {
     green: 'hover:bg-green-500/10 hover:border-green-500/30 hover:text-green-600',
     emerald: 'hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600',
     teal: 'hover:bg-teal-500/10 hover:border-teal-500/30 hover:text-teal-600',
     lime: 'hover:bg-lime-500/10 hover:border-lime-500/30 hover:text-lime-600',
+    purple: 'hover:bg-purple-500/10 hover:border-purple-500/30 hover:text-purple-600',
+    orange: 'hover:bg-orange-500/10 hover:border-orange-500/30 hover:text-orange-600',
   };
 
   return (
-    <button className={`flex items-center gap-2 p-3 rounded-lg border border-border/50 transition-all ${colorMap[color]}`}>
+    <button onClick={onClick} className={`flex items-center gap-2 p-3 rounded-lg border border-border/50 transition-all ${colorMap[color]}`}>
       {icon}
       <span className="text-sm font-medium">{label}</span>
     </button>

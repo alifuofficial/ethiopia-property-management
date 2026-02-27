@@ -124,3 +124,28 @@ Stage Summary:
 - Available roles: System Admin, Owner, Property Admin, Accountant
 - Tenants must be added through the Tenants page only
 - UI labels and descriptions updated to reflect staff-only management
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Update Admin Dashboard with real database data
+
+Work Log:
+- Extended DashboardStats type with chart data fields (monthlyRevenue, paymentStatusData, contractStatusData, monthlyTrend, recentActivity)
+- Completely rewrote dashboard stats API to fetch real data from database
+- Added monthly revenue calculation from approved payments
+- Added payment status breakdown (approved, pending, rejected)
+- Added contract status breakdown (active, pending, terminated)
+- Added weekly collections vs target chart data
+- Added recent activity aggregation (payments, contracts, tenants, invoices)
+- Updated DashboardView to use real chart data instead of hardcoded mock data
+- Added revenue trend percentage calculation from last two months
+- Updated Quick Actions to be functional with navigation to respective pages
+- Added Recent Activity section showing latest updates across properties
+
+Stage Summary:
+- Dashboard now displays real data from the database
+- Charts show actual revenue trends, payment status, contract distribution
+- Quick Actions navigate to respective pages (Properties, Tenants, Contracts, Payments)
+- Recent Activity shows latest payments, contracts, tenants, and invoices
+- All stats cards show real numbers with calculated trends

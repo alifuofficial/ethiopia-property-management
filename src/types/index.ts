@@ -207,6 +207,40 @@ export interface SystemSettings {
   defaultCalendar: 'gregorian' | 'ethiopian';
 }
 
+export interface MonthlyRevenueData {
+  month: string;
+  revenue: number;
+  expenses: number;
+}
+
+export interface PaymentStatusData {
+  name: string;
+  value: number;
+  fill: string;
+}
+
+export interface ContractStatusData {
+  name: string;
+  value: number;
+  fill: string;
+}
+
+export interface MonthlyTrendData {
+  name: string;
+  collections: number;
+  target: number;
+}
+
+export interface RecentActivity {
+  id: string;
+  type: 'payment' | 'contract' | 'tenant' | 'invoice';
+  title: string;
+  description: string;
+  amount?: number;
+  date: string;
+  status?: string;
+}
+
 export interface DashboardStats {
   totalProperties: number;
   totalUnits: number;
@@ -214,10 +248,22 @@ export interface DashboardStats {
   availableUnits: number;
   totalTenants: number;
   activeContracts: number;
+  pendingContracts: number;
+  terminatedContracts: number;
   pendingPayments: number;
+  approvedPayments: number;
+  rejectedPayments: number;
   totalRevenue: number;
   pendingInvoices: number;
   overdueInvoices: number;
+  paidInvoices: number;
+  // Chart data
+  monthlyRevenue: MonthlyRevenueData[];
+  paymentStatusData: PaymentStatusData[];
+  contractStatusData: ContractStatusData[];
+  monthlyTrend: MonthlyTrendData[];
+  // Recent activity
+  recentActivity: RecentActivity[];
 }
 
 export interface AuthState {
