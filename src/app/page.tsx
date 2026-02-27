@@ -1460,22 +1460,22 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">User Management</h1>
-          <p className="text-muted-foreground mt-1">Manage system users and their roles</p>
+          <p className="text-muted-foreground mt-1">Manage staff accounts (System Admin, Owner, Property Admin, Accountant). Tenants are managed in Tenants page.</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-emerald-500 hover:from-primary/90 hover:to-emerald-500/90 shadow-lg shadow-primary/20">
-              <Plus className="mr-2 h-4 w-4" /> Add User
+              <Plus className="mr-2 h-4 w-4" /> Add Staff
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {editingUser ? <Edit className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
-                {editingUser ? 'Edit User' : 'Create New User'}
+                {editingUser ? 'Edit Staff User' : 'Add New Staff'}
               </DialogTitle>
               <DialogDescription>
-                {editingUser ? 'Update user information' : 'Add a new user to the system'}
+                {editingUser ? 'Update staff user information' : 'Add a new staff member to the system'}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -1568,14 +1568,9 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
                         Accountant
                       </div>
                     </SelectItem>
-                    <SelectItem value="TENANT">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-gray-500" />
-                        Tenant
-                      </div>
-                    </SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1">Staff roles only. Tenants are added via Tenants page.</p>
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
@@ -1691,12 +1686,11 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
                 <SelectValue placeholder="Filter by role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="all">All Staff Roles</SelectItem>
                 <SelectItem value="SYSTEM_ADMIN">System Admin</SelectItem>
                 <SelectItem value="OWNER">Owner</SelectItem>
                 <SelectItem value="PROPERTY_ADMIN">Property Admin</SelectItem>
                 <SelectItem value="ACCOUNTANT">Accountant</SelectItem>
-                <SelectItem value="TENANT">Tenant</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
