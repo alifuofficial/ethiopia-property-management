@@ -25,7 +25,10 @@ import {
   TrendingUp, PieChart, BarChart3, Upload, Send, MessageSquare, Mail,
   Phone, MapPin, Calendar, CreditCard, Banknote, FileCheck, UserCheck,
   Building, DoorOpen, Receipt, Wallet, ArrowRightLeft, Bell,
-  ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown, Calculator
+  ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown, Calculator,
+  ChevronDown, ChevronRight, LayoutGrid, Shield, UserCog, KeyRound,
+  Landmark, HomeIcon, UserCircle, FileSignature, DollarSignIcon, ReceiptIcon,
+  CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
@@ -59,6 +62,7 @@ export default function PropertyManagementSystem() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   // Data states
   const [properties, setProperties] = useState<Property[]>([]);
@@ -207,50 +211,114 @@ export default function PropertyManagementSystem() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 border-r border-border/50 bg-sidebar overflow-hidden`}>
-          <ScrollArea className="h-full">
-            <nav className="p-4 space-y-2">
-              <SidebarItem icon={<Home />} label="Dashboard" view="dashboard" currentView={currentView} onClick={setCurrentView} />
-              
-              {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
-                <>
-                  <SidebarSection title="Administration" />
-                  <SidebarItem icon={<Users />} label="Users" view="users" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<Building2 />} label="Properties" view="properties" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<UserCheck />} label="Assignments" view="assignments" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<Settings />} label="Settings" view="settings" currentView={currentView} onClick={setCurrentView} />
-                </>
-              )}
+        {/* Modern Sidebar */}
+        <aside className={`${sidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 overflow-hidden shadow-lg`}>
+          <div className="h-full flex flex-col">
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+              <div className="flex items-center gap-3 px-2">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-primary/70 shadow-lg shadow-primary/20">
+                  <Building2 className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-sm font-bold truncate text-gray-900 dark:text-white">
+                    Property Manager
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Ethiopia</p>
+                </div>
+              </div>
+            </div>
 
-              {(user?.role === 'PROPERTY_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
-                <>
-                  <SidebarSection title="Property Management" />
-                  <SidebarItem icon={<DoorOpen />} label="Units" view="units" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<Users />} label="Tenants" view="tenants" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<FileText />} label="Contracts" view="contracts" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<Receipt />} label="Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
-                </>
-              )}
+            {/* Scrollable Navigation */}
+            <ScrollArea className="flex-1 px-3 py-4">
+              <nav className="space-y-1">
+                {/* Dashboard - Always visible */}
+                <SidebarItem 
+                  icon={<LayoutGrid className="h-4 w-4" />} 
+                  label="Dashboard" 
+                  view="dashboard" 
+                  currentView={currentView} 
+                  onClick={setCurrentView}
+                  isHighlighted
+                />
 
-              {(user?.role === 'ACCOUNTANT' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
-                <>
-                  <SidebarSection title="Finance" />
-                  <SidebarItem icon={<Wallet />} label="Payments" view="payments" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<ArrowRightLeft />} label="Terminations" view="terminations" currentView={currentView} onClick={setCurrentView} />
-                </>
-              )}
+                {/* System Administration - For System Admin & Owner */}
+                {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
+                  <SidebarCategory
+                    title="System Administration"
+                    icon={<Shield className="h-4 w-4" />}
+                    collapsed={collapsedCategories['admin']}
+                    onToggle={() => setCollapsedCategories(prev => ({ ...prev, admin: !prev.admin }))}
+                  >
+                    <SidebarItem icon={<Users className="h-4 w-4" />} label="User Management" view="users" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<Landmark className="h-4 w-4" />} label="Properties" view="properties" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<KeyRound className="h-4 w-4" />} label="Access Control" view="assignments" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<Wrench className="h-4 w-4" />} label="System Settings" view="settings" currentView={currentView} onClick={setCurrentView} />
+                  </SidebarCategory>
+                )}
 
-              {user?.role === 'TENANT' && (
-                <>
-                  <SidebarSection title="My Account" />
-                  <SidebarItem icon={<FileText />} label="My Contracts" view="contracts" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<Receipt />} label="My Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
-                  <SidebarItem icon={<Wallet />} label="My Payments" view="payments" currentView={currentView} onClick={setCurrentView} />
-                </>
-              )}
-            </nav>
-          </ScrollArea>
+                {/* Property Operations - For Property Admin, System Admin & Owner */}
+                {(user?.role === 'PROPERTY_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
+                  <SidebarCategory
+                    title="Property Operations"
+                    icon={<Building className="h-4 w-4" />}
+                    collapsed={collapsedCategories['property']}
+                    onToggle={() => setCollapsedCategories(prev => ({ ...prev, property: !prev.property }))}
+                  >
+                    <SidebarItem icon={<DoorOpen className="h-4 w-4" />} label="Units" view="units" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<UserCircle className="h-4 w-4" />} label="Tenants" view="tenants" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<FileSignature className="h-4 w-4" />} label="Contracts" view="contracts" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<ReceiptIcon className="h-4 w-4" />} label="Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
+                  </SidebarCategory>
+                )}
+
+                {/* Financial Management - For Accountant, System Admin & Owner */}
+                {(user?.role === 'ACCOUNTANT' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
+                  <SidebarCategory
+                    title="Financial Management"
+                    icon={<DollarSign className="h-4 w-4" />}
+                    collapsed={collapsedCategories['finance']}
+                    onToggle={() => setCollapsedCategories(prev => ({ ...prev, finance: !prev.finance }))}
+                  >
+                    <SidebarItem icon={<CreditCard className="h-4 w-4" />} label="Payments" view="payments" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<ArrowLeftRight className="h-4 w-4" />} label="Terminations" view="terminations" currentView={currentView} onClick={setCurrentView} />
+                  </SidebarCategory>
+                )}
+
+                {/* Tenant Portal - For Tenants */}
+                {user?.role === 'TENANT' && (
+                  <SidebarCategory
+                    title="My Portal"
+                    icon={<UserCircle className="h-4 w-4" />}
+                    collapsed={collapsedCategories['tenant']}
+                    onToggle={() => setCollapsedCategories(prev => ({ ...prev, tenant: !prev.tenant }))}
+                    defaultOpen
+                  >
+                    <SidebarItem icon={<FileSignature className="h-4 w-4" />} label="My Contracts" view="contracts" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<ReceiptIcon className="h-4 w-4" />} label="My Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
+                    <SidebarItem icon={<CreditCard className="h-4 w-4" />} label="My Payments" view="payments" currentView={currentView} onClick={setCurrentView} />
+                  </SidebarCategory>
+                )}
+              </nav>
+            </ScrollArea>
+
+            {/* Sidebar Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+              <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-gray-100 dark:bg-gray-900">
+                <Avatar className="h-9 w-9 border-2 border-primary/20">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                    {user?.name?.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-gray-900 dark:text-white">{user?.name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 capitalize truncate">
+                    {user?.role?.replace('_', ' ').toLowerCase()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </aside>
 
         {/* Main Content */}
@@ -521,32 +589,85 @@ function LoginForm({ onLogin }: { onLogin: (user: User) => void }) {
   );
 }
 
-// Sidebar Components
-function SidebarItem({ icon, label, view, currentView, onClick }: {
+// Modern Sidebar Components
+function SidebarItem({ icon, label, view, currentView, onClick, isHighlighted = false }: {
   icon: React.ReactNode;
   label: string;
   view: string;
   currentView: string;
   onClick: (view: string) => void;
+  isHighlighted?: boolean;
 }) {
   const isActive = currentView === view;
   return (
     <button
       onClick={() => onClick(view)}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${
         isActive 
-          ? 'bg-primary text-primary-foreground shadow-md' 
-          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+          ? 'bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/25' 
+          : isHighlighted
+            ? 'text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-primary'
+            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
       }`}
     >
-      <span className={`${isActive ? 'text-primary-foreground' : 'text-sidebar-foreground/50'}`}>
+      <span className={`transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}>
         {icon}
       </span>
-      {label}
+      <span className="flex-1 text-left">{label}</span>
+      {isActive && (
+        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+      )}
     </button>
   );
 }
 
+function SidebarCategory({ 
+  title, 
+  icon, 
+  collapsed, 
+  onToggle, 
+  children,
+  defaultOpen = false 
+}: {
+  title: string;
+  icon: React.ReactNode;
+  collapsed?: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const isCollapsed = collapsed ?? !defaultOpen;
+  
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 group"
+      >
+        <span className="text-primary/70 group-hover:text-primary transition-colors">
+          {icon}
+        </span>
+        <span className="flex-1 text-left">{title}</span>
+        <ChevronDown 
+          className={`h-4 w-4 text-gray-400 transition-transform duration-300 ${
+            isCollapsed ? '' : 'rotate-180'
+          }`} 
+        />
+      </button>
+      <div 
+        className={`overflow-hidden transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
+        }`}
+      >
+        <div className="pl-4 border-l-2 border-primary/10 ml-3 space-y-0.5">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Legacy - kept for reference
 function SidebarSection({ title }: { title: string }) {
   return (
     <div className="pt-4 pb-2">
