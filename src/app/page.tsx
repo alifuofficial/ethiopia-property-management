@@ -6420,7 +6420,7 @@ function SettingsView({ settings, setSettings }: {
   settings: SystemSettings | null;
   setSettings: React.Dispatch<React.SetStateAction<SystemSettings | null>>;
 }) {
-  const [activeCategory, setActiveCategory] = useState<string>('notifications');
+  const [activeCategory, setActiveCategory] = useState<string>('general');
   const [formData, setFormData] = useState(() => ({
     tenantSelfServiceEnabled: settings?.tenantSelfServiceEnabled ?? false,
     smsNotificationEnabled: settings?.smsNotificationEnabled ?? false,
@@ -6451,14 +6451,6 @@ function SettingsView({ settings, setSettings }: {
   const [testPhone, setTestPhone] = useState('');
   const [isTestLoading, setIsTestLoading] = useState(false);
   const [isSmsLoading, setIsSmsLoading] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    sms: true,
-    notifications: true,
-    payments: false,
-    tax: false,
-    portal: false,
-    integrations: false,
-  });
 
   // Load SMS settings on mount
   useEffect(() => {
@@ -6545,450 +6537,427 @@ function SettingsView({ settings, setSettings }: {
     }
   };
 
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
   // Settings categories configuration
   const settingCategories = [
-    { id: 'notifications', label: 'Notifications', icon: Bell, color: 'primary' },
-    { id: 'sms', label: 'SMS Settings', icon: MessageSquare, color: 'emerald' },
-    { id: 'payments', label: 'Payments', icon: Wallet, color: 'amber' },
-    { id: 'portal', label: 'Portal', icon: Building2, color: 'teal' },
-    { id: 'integrations', label: 'Integrations', icon: Zap, color: 'purple' },
+    { id: 'general', label: 'General', icon: Settings, color: 'gray', description: 'System & Portal settings' },
+    { id: 'notifications', label: 'Notifications', icon: Bell, color: 'blue', description: 'Email, Telegram, WhatsApp' },
+    { id: 'sms', label: 'SMS Gateway', icon: MessageSquare, color: 'emerald', description: 'SMS Ethiopia API' },
+    { id: 'payments', label: 'Payments', icon: Wallet, color: 'amber', description: 'Payment rules & penalties' },
+    { id: 'tax', label: 'Tax', icon: Receipt, color: 'rose', description: 'Tax configuration' },
+    { id: 'integrations', label: 'Integrations', icon: Zap, color: 'purple', description: 'Third-party services' },
   ];
 
+  const getCategoryStatus = (id: string) => {
+    switch (id) {
+      case 'general': return formData.tenantSelfServiceEnabled ? 'Enabled' : 'Disabled';
+      case 'notifications': return [formData.emailNotificationEnabled, formData.smsNotificationEnabled, formData.telegramNotificationEnabled, formData.whatsappNotificationEnabled].filter(Boolean).length + ' active';
+      case 'sms': return smsSettings.hasApiKey ? 'Connected' : 'Setup';
+      case 'payments': return formData.advancePaymentMaxMonths + ' mo max';
+      case 'tax': return formData.taxEnabled ? `${formData.taxRate}% ${formData.taxName}` : 'Off';
+      case 'integrations': return 'Coming soon';
+      default: return '';
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Header with gradient */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-emerald-500/5 to-teal-500/5 p-6 border border-primary/10">
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary via-emerald-500 to-teal-500 bg-clip-text text-transparent">System Settings</h1>
-            <p className="text-muted-foreground mt-1">Configure your property management system</p>
+    <div className="flex gap-6 h-[calc(100vh-120px)]">
+      {/* Settings Sidebar */}
+      <div className="w-64 shrink-0">
+        <Card className="border-border/50 shadow-sm h-full overflow-hidden">
+          <div className="p-4 border-b border-border/30 bg-gradient-to-r from-primary/5 to-transparent">
+            <h2 className="font-semibold text-lg">Settings</h2>
+            <p className="text-sm text-muted-foreground">Configure your system</p>
           </div>
-          <div className="flex items-center gap-3">
-            {smsSettings.hasApiKey && (
-              <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
-                <Check className="h-3 w-3 mr-1" /> SMS Configured
-              </Badge>
-            )}
-            <Badge variant="outline" className="text-emerald-600 border-emerald-500/20 bg-emerald-50">
-              <Activity className="h-3 w-3 mr-1" /> System Active
-            </Badge>
-          </div>
-        </div>
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-      </div>
-
-      {/* Quick Settings Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Card className="group bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('notifications')}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                <Bell className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Notifications</p>
-                <p className="text-xs text-muted-foreground">
-                  {[formData.emailNotificationEnabled, formData.smsNotificationEnabled, formData.telegramNotificationEnabled, formData.whatsappNotificationEnabled].filter(Boolean).length} active
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="group bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('sms')}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors">
-                <MessageSquare className="h-4 w-4 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">SMS</p>
-                <p className="text-xs text-muted-foreground">{smsSettings.hasApiKey ? 'Configured' : 'Setup needed'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="group bg-gradient-to-br from-rose-500/10 to-rose-500/5 border-rose-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('tax')}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-rose-500/10 group-hover:bg-rose-500/20 transition-colors">
-                <Receipt className="h-4 w-4 text-rose-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Tax</p>
-                <p className="text-xs text-muted-foreground">{formData.taxEnabled ? `${formData.taxRate}% ${formData.taxName}` : 'Disabled'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="group bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('payments')}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
-                <Wallet className="h-4 w-4 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Payments</p>
-                <p className="text-xs text-muted-foreground">{formData.advancePaymentMaxMonths}mo max</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="group bg-gradient-to-br from-teal-500/10 to-teal-500/5 border-teal-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('portal')}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
-                <Building2 className="h-4 w-4 text-teal-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Portal</p>
-                <p className="text-xs text-muted-foreground">{formData.tenantSelfServiceEnabled ? 'Enabled' : 'Disabled'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* SMS Configuration Card */}
-      <Card className="border-primary/20 shadow-sm overflow-hidden">
-        <div 
-          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-          onClick={() => toggleSection('sms')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/10">
-              <MessageSquare className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">SMS Ethiopia Configuration</CardTitle>
-              <CardDescription>Configure SMSEthiopia API for sending SMS notifications</CardDescription>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {smsSettings.hasApiKey && (
-              <Badge variant="outline" className="text-emerald-600 border-emerald-500/20 bg-emerald-50">
-                <Check className="h-3 w-3 mr-1" /> Active
-              </Badge>
-            )}
-            <div className={`transition-transform duration-200 ${expandedSections.sms ? 'rotate-180' : ''}`}>
-              <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-        </div>
-        
-        {expandedSections.sms && (
-          <CardContent className="pt-4 border-t border-border/50">
-            <form onSubmit={handleSmsSettingsSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2 text-sm font-medium">
-                    <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                    </svg>
-                    API Key
-                  </Label>
-                  <Input
-                    type="password"
-                    placeholder={smsSettings.hasApiKey ? '****' + (smsSettings.smsApiKey?.slice(-4) || '') : 'Enter your SMSEthiopia API Key'}
-                    value={smsSettings.smsApiKey}
-                    onChange={(e) => setSmsSettings({ ...smsSettings, smsApiKey: e.target.value })}
-                    className="border-emerald-500/20 focus:border-emerald-500"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Get your API key from <span className="text-emerald-600 font-medium">Console → API Keys</span> at smsethiopia.et
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Sender ID (Optional)</Label>
-                  <Input
-                    placeholder="YourBrand"
-                    value={smsSettings.smsSenderId || ''}
-                    onChange={(e) => setSmsSettings({ ...smsSettings, smsSenderId: e.target.value })}
-                    className="border-emerald-500/20 focus:border-emerald-500"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Custom sender name for your SMS messages
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">API Base URL</Label>
-                <Input
-                  value={smsSettings.smsBaseUrl}
-                  onChange={(e) => setSmsSettings({ ...smsSettings, smsBaseUrl: e.target.value })}
-                  className="border-emerald-500/20 focus:border-emerald-500"
-                />
-              </div>
+          <nav className="p-2 space-y-1">
+            {settingCategories.map((cat) => {
+              const isActive = activeCategory === cat.id;
+              const Icon = cat.icon;
+              const status = getCategoryStatus(cat.id);
               
-              {/* Test SMS Section */}
-              <div className="pt-4 border-t border-border/50">
-                <h4 className="font-medium mb-3 flex items-center gap-2 text-sm">
-                  <Send className="h-4 w-4 text-emerald-600" />
-                  Test SMS Configuration
-                </h4>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="0912345678 or 251912345678"
-                    value={testPhone}
-                    onChange={(e) => setTestPhone(e.target.value)}
-                    className="flex-1 border-emerald-500/20 focus:border-emerald-500"
-                  />
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={handleTestSms}
-                    disabled={isTestLoading || !smsSettings.hasApiKey}
-                    className="border-emerald-500/20 text-emerald-600 hover:bg-emerald-50"
-                  >
-                    {isTestLoading ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4 mr-2" />
-                        Send Test
-                      </>
-                    )}
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all duration-200 group ${
+                    isActive 
+                      ? 'bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/25' 
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className={`p-1.5 rounded-lg ${
+                    isActive 
+                      ? 'bg-white/20' 
+                      : 'bg-gray-100 dark:bg-gray-800 group-hover:bg-primary/10'
+                  }`}>
+                    <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-gray-500 dark:text-gray-400'}`} />
+                  </span>
+                  <div className="flex-1 text-left">
+                    <p className={`font-medium ${isActive ? 'text-white' : ''}`}>{cat.label}</p>
+                    <p className={`text-xs truncate ${isActive ? 'text-white/70' : 'text-muted-foreground'}`}>
+                      {status}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
+        </Card>
+      </div>
+
+      {/* Settings Content */}
+      <div className="flex-1 overflow-auto">
+        {/* General Settings */}
+        {activeCategory === 'general' && (
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="border-b border-border/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800">
+                  <Settings className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                </div>
+                <div>
+                  <CardTitle>General Settings</CardTitle>
+                  <CardDescription>System-wide configuration and tenant portal access</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Portal Settings */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-primary/5 to-emerald-500/5 border border-primary/10">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-xl bg-primary/10">
+                        <Building2 className="h-6 w-6 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">Tenant Self-Service Portal</h3>
+                        <p className="text-sm text-muted-foreground">Allow tenants to access their portal to view contracts, invoices, and make payments</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={formData.tenantSelfServiceEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, tenantSelfServiceEnabled: v })}
+                    />
+                  </div>
+                </div>
+
+                {/* Status indicators */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                      <Activity className="h-4 w-4" />
+                      <span className="text-sm font-medium">System Status</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                      <span className="font-semibold">Active</span>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                      <Users className="h-4 w-4" />
+                      <span className="text-sm font-medium">Portal Access</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${formData.tenantSelfServiceEnabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                      <span className="font-semibold">{formData.tenantSelfServiceEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t border-border/50">
+                  <Button type="submit" className="bg-gradient-to-r from-primary to-primary/80">
+                    Save General Settings
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Enter an Ethiopian phone number to test your SMS configuration
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-border/50">
-                <div className="flex items-center gap-3">
-                  <Switch
-                    checked={formData.smsNotificationEnabled}
-                    onCheckedChange={(v) => setFormData({ ...formData, smsNotificationEnabled: v })}
-                  />
-                  <Label className="font-medium">Enable SMS Notifications</Label>
-                </div>
-                <Button type="submit" disabled={isSmsLoading} className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700">
-                  {isSmsLoading ? 'Saving...' : 'Save SMS Settings'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
+              </form>
+            </CardContent>
+          </Card>
         )}
-      </Card>
 
-      {/* General Settings Card */}
-      <Card className="border-border/50 shadow-sm overflow-hidden">
-        <div 
-          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-          onClick={() => toggleSection('notifications')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
-              <Bell className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Notification Settings</CardTitle>
-              <CardDescription>Configure system-wide notification preferences</CardDescription>
-            </div>
-          </div>
-          <div className={`transition-transform duration-200 ${expandedSections.notifications ? 'rotate-180' : ''}`}>
-            <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
-        
-        {expandedSections.notifications && (
-          <CardContent className="pt-4 border-t border-border/50">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Portal Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Building2 className="h-4 w-4" />
-                  TENANT PORTAL
+        {/* Notifications Settings */}
+        {activeCategory === 'notifications' && (
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="border-b border-border/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <Bell className="h-5 w-5 text-blue-600" />
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                  <div>
-                    <Label className="font-medium">Tenant Self-Service Portal</Label>
-                    <p className="text-sm text-muted-foreground">Allow tenants to access their portal</p>
+                <div>
+                  <CardTitle>Notification Settings</CardTitle>
+                  <CardDescription>Configure how you send notifications to tenants and users</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {[
+                  { 
+                    key: 'emailNotificationEnabled', 
+                    label: 'Email Notifications', 
+                    desc: 'Send notifications via email',
+                    icon: Mail,
+                    color: 'blue'
+                  },
+                  { 
+                    key: 'telegramNotificationEnabled', 
+                    label: 'Telegram Notifications', 
+                    desc: 'Send notifications via Telegram bot',
+                    icon: MessageSquare,
+                    color: 'sky'
+                  },
+                  { 
+                    key: 'whatsappNotificationEnabled', 
+                    label: 'WhatsApp Notifications', 
+                    desc: 'Send notifications via WhatsApp Business API',
+                    icon: MessageSquare,
+                    color: 'green'
+                  },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.key} className="flex items-center justify-between p-4 rounded-xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className={`p-2.5 rounded-xl bg-${item.color}-100 dark:bg-${item.color}-900/30`}>
+                          <Icon className={`h-5 w-5 text-${item.color}-600`} />
+                        </div>
+                        <div>
+                          <p className="font-medium">{item.label}</p>
+                          <p className="text-sm text-muted-foreground">{item.desc}</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={formData[item.key as keyof typeof formData] as boolean}
+                        onCheckedChange={(v) => setFormData({ ...formData, [item.key]: v })}
+                      />
+                    </div>
+                  );
+                })}
+
+                <div className="flex justify-end pt-4 border-t border-border/50">
+                  <Button type="submit" className="bg-gradient-to-r from-blue-500 to-blue-600">
+                    Save Notification Settings
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* SMS Settings */}
+        {activeCategory === 'sms' && (
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="border-b border-border/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                    <MessageSquare className="h-5 w-5 text-emerald-600" />
                   </div>
-                  <Switch
-                    checked={formData.tenantSelfServiceEnabled}
-                    onCheckedChange={(v) => setFormData({ ...formData, tenantSelfServiceEnabled: v })}
+                  <div>
+                    <CardTitle>SMS Ethiopia Configuration</CardTitle>
+                    <CardDescription>Configure SMSEthiopia API for sending SMS notifications</CardDescription>
+                  </div>
+                </div>
+                {smsSettings.hasApiKey && (
+                  <Badge variant="outline" className="text-emerald-600 border-emerald-500/20 bg-emerald-50">
+                    <Check className="h-3 w-3 mr-1" /> Connected
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form onSubmit={handleSmsSettingsSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="font-medium">API Key</Label>
+                    <Input
+                      type="password"
+                      placeholder={smsSettings.hasApiKey ? '****' + (smsSettings.smsApiKey?.slice(-4) || '') : 'Enter your SMSEthiopia API Key'}
+                      value={smsSettings.smsApiKey}
+                      onChange={(e) => setSmsSettings({ ...smsSettings, smsApiKey: e.target.value })}
+                      className="border-emerald-500/20 focus:border-emerald-500"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Get your API key from <span className="text-emerald-600 font-medium">Console → API Keys</span> at smsethiopia.et
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="font-medium">Sender ID (Optional)</Label>
+                    <Input
+                      placeholder="YourBrand"
+                      value={smsSettings.smsSenderId || ''}
+                      onChange={(e) => setSmsSettings({ ...smsSettings, smsSenderId: e.target.value })}
+                      className="border-emerald-500/20 focus:border-emerald-500"
+                    />
+                    <p className="text-xs text-muted-foreground">Custom sender name for your SMS messages</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-medium">API Base URL</Label>
+                  <Input
+                    value={smsSettings.smsBaseUrl}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, smsBaseUrl: e.target.value })}
+                    className="border-emerald-500/20 focus:border-emerald-500"
                   />
                 </div>
-              </div>
 
-              <Separator />
-
-              {/* Notification Channels */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Bell className="h-4 w-4" />
-                  NOTIFICATION CHANNELS
+                {/* Test SMS Section */}
+                <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <Send className="h-4 w-4 text-emerald-600" />
+                    Test SMS Configuration
+                  </h4>
+                  <div className="flex gap-3">
+                    <Input
+                      placeholder="0912345678 or 251912345678"
+                      value={testPhone}
+                      onChange={(e) => setTestPhone(e.target.value)}
+                      className="flex-1 border-emerald-500/20 focus:border-emerald-500"
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={handleTestSms}
+                      disabled={isTestLoading || !smsSettings.hasApiKey}
+                      className="border-emerald-500/20 text-emerald-600 hover:bg-emerald-50"
+                    >
+                      {isTestLoading ? 'Sending...' : 'Send Test'}
+                    </Button>
+                  </div>
                 </div>
-                <div className="grid gap-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <Mail className="h-4 w-4 text-primary" />
-                      </div>
-                      <div>
-                        <Label className="font-medium">Email Notifications</Label>
-                        <p className="text-xs text-muted-foreground">Send notifications via email</p>
-                      </div>
-                    </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                  <div className="flex items-center gap-3">
                     <Switch
-                      checked={formData.emailNotificationEnabled}
-                      onCheckedChange={(v) => setFormData({ ...formData, emailNotificationEnabled: v })}
+                      checked={formData.smsNotificationEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, smsNotificationEnabled: v })}
                     />
+                    <Label className="font-medium">Enable SMS Notifications</Label>
                   </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-teal-500/10">
-                        <MessageSquare className="h-4 w-4 text-teal-600" />
-                      </div>
-                      <div>
-                        <Label className="font-medium">Telegram Notifications</Label>
-                        <p className="text-xs text-muted-foreground">Send notifications via Telegram bot</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={formData.telegramNotificationEnabled}
-                      onCheckedChange={(v) => setFormData({ ...formData, telegramNotificationEnabled: v })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-emerald-500/10">
-                        <MessageSquare className="h-4 w-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <Label className="font-medium">WhatsApp Notifications</Label>
-                        <p className="text-xs text-muted-foreground">Send notifications via WhatsApp</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={formData.whatsappNotificationEnabled}
-                      onCheckedChange={(v) => setFormData({ ...formData, whatsappNotificationEnabled: v })}
-                    />
-                  </div>
+                  <Button type="submit" disabled={isSmsLoading} className="bg-gradient-to-r from-emerald-500 to-emerald-600">
+                    {isSmsLoading ? 'Saving...' : 'Save SMS Settings'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Payments Settings */}
+        {activeCategory === 'payments' && (
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="border-b border-border/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <Wallet className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <CardTitle>Payment Settings</CardTitle>
+                  <CardDescription>Configure payment rules and penalties</CardDescription>
                 </div>
               </div>
-
-              <Separator />
-
-              {/* Payment Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Wallet className="h-4 w-4" />
-                  PAYMENT SETTINGS
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="font-medium">Max Advance Payment Months</Label>
+            </CardHeader>
+            <CardContent className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 border border-amber-200/50">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                        <Calendar className="h-5 w-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold">Advance Payment</p>
+                        <p className="text-sm text-muted-foreground">Maximum months in advance</p>
+                      </div>
+                    </div>
                     <Input
                       type="number"
                       value={formData.advancePaymentMaxMonths}
                       onChange={(e) => setFormData({ ...formData, advancePaymentMaxMonths: parseInt(e.target.value) })}
-                      className="border-amber-500/20 focus:border-amber-500"
+                      className="border-amber-500/20 focus:border-amber-500 text-lg font-semibold"
                     />
-                    <p className="text-xs text-muted-foreground">Maximum months tenants can pay in advance</p>
+                    <p className="text-xs text-muted-foreground mt-2">Tenants can pay up to this many months in advance</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="font-medium">Late Payment Penalty (%)</Label>
-                    <Input
-                      type="number"
-                      value={formData.latePaymentPenaltyPercent}
-                      onChange={(e) => setFormData({ ...formData, latePaymentPenaltyPercent: parseFloat(e.target.value) })}
-                      className="border-amber-500/20 focus:border-amber-500"
-                    />
-                    <p className="text-xs text-muted-foreground">Percentage penalty for late payments</p>
+
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/10 dark:to-rose-900/10 border border-red-200/50">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                        <AlertTriangle className="h-5 w-5 text-red-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold">Late Payment Penalty</p>
+                        <p className="text-sm text-muted-foreground">Percentage penalty fee</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={formData.latePaymentPenaltyPercent}
+                        onChange={(e) => setFormData({ ...formData, latePaymentPenaltyPercent: parseFloat(e.target.value) })}
+                        className="border-red-500/20 focus:border-red-500 text-lg font-semibold"
+                      />
+                      <span className="text-lg font-semibold text-muted-foreground">%</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">Applied to overdue invoices</p>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex justify-end pt-4 border-t border-border/50">
-                <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500 shadow-lg shadow-primary/20">
-                  Save All Settings
-                </Button>
-              </div>
-            </form>
-          </CardContent>
+                <div className="flex justify-end pt-4 border-t border-border/50">
+                  <Button type="submit" className="bg-gradient-to-r from-amber-500 to-amber-600">
+                    Save Payment Settings
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         )}
-      </Card>
 
-      {/* Tax Configuration Card */}
-      <Card className="border-border/50 shadow-sm overflow-hidden">
-        <div 
-          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-          onClick={() => toggleSection('tax')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-rose-500/20 to-rose-500/10">
-              <Receipt className="h-5 w-5 text-rose-600" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Tax Configuration</CardTitle>
-              <CardDescription>Configure tax settings for invoices and contracts</CardDescription>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {formData.taxEnabled && (
-              <Badge variant="outline" className="text-rose-600 border-rose-500/20 bg-rose-50">
-                <Check className="h-3 w-3 mr-1" /> Active
-              </Badge>
-            )}
-            <div className={`transition-transform duration-200 ${expandedSections.tax ? 'rotate-180' : ''}`}>
-              <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-        </div>
-        
-        {expandedSections.tax && (
-          <CardContent className="pt-4 border-t border-border/50">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Enable Tax Toggle */}
-              <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200/50">
+        {/* Tax Settings */}
+        {activeCategory === 'tax' && (
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="border-b border-border/30">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-rose-500/10">
+                  <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
                     <Receipt className="h-5 w-5 text-rose-600" />
                   </div>
                   <div>
-                    <Label className="font-medium text-base">Enable Tax System</Label>
-                    <p className="text-sm text-muted-foreground">Apply tax to invoices and contracts</p>
+                    <CardTitle>Tax Configuration</CardTitle>
+                    <CardDescription>Configure tax settings for invoices and contracts</CardDescription>
                   </div>
                 </div>
-                <Switch
-                  checked={formData.taxEnabled}
-                  onCheckedChange={(v) => setFormData({ ...formData, taxEnabled: v })}
-                />
+                {formData.taxEnabled && (
+                  <Badge variant="outline" className="text-rose-600 border-rose-500/20 bg-rose-50">
+                    <Check className="h-3 w-3 mr-1" /> Active
+                  </Badge>
+                )}
               </div>
-
-              {formData.taxEnabled && (
-                <>
-                  <Separator />
-                  
-                  {/* Basic Tax Settings */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Settings className="h-4 w-4" />
-                      BASIC TAX SETTINGS
+            </CardHeader>
+            <CardContent className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Enable Tax Toggle */}
+                <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-rose-50 to-amber-50 dark:from-rose-900/10 dark:to-amber-900/10 border border-rose-200/50">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-rose-100 dark:bg-rose-900/30">
+                      <Receipt className="h-6 w-6 text-rose-600" />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="font-semibold text-lg">Enable Tax System</h3>
+                      <p className="text-sm text-muted-foreground">Apply tax to invoices and contracts</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={formData.taxEnabled}
+                    onCheckedChange={(v) => setFormData({ ...formData, taxEnabled: v })}
+                  />
+                </div>
+
+                {formData.taxEnabled && (
+                  <>
+                    {/* Basic Tax Settings */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <Label className="font-medium">Tax Name</Label>
                         <Input
@@ -7010,203 +6979,196 @@ function SettingsView({ settings, setSettings }: {
                         <p className="text-xs text-muted-foreground">Your business tax ID (optional)</p>
                       </div>
                     </div>
-                  </div>
 
-                  <Separator />
-
-                  {/* Tax Calculation Method */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Calculator className="h-4 w-4" />
-                      TAX CALCULATION METHOD
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="font-medium">Tax Type</Label>
-                        <Select 
-                          value={formData.taxType} 
-                          onValueChange={(v) => setFormData({ ...formData, taxType: v as 'PERCENTAGE' | 'FIXED_AMOUNT' })}
-                        >
-                          <SelectTrigger className="border-rose-500/20 focus:border-rose-500">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
-                            <SelectItem value="FIXED_AMOUNT">Fixed Amount</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {formData.taxType === 'PERCENTAGE' ? (
+                    {/* Tax Calculation Method */}
+                    <div className="p-4 rounded-xl bg-muted/30 border border-border/50 space-y-4">
+                      <h4 className="font-medium flex items-center gap-2">
+                        <Calculator className="h-4 w-4 text-rose-600" />
+                        Tax Calculation Method
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label className="font-medium">Tax Rate (%)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={formData.taxRate}
-                            onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) || 0 })}
-                            className="border-rose-500/20 focus:border-rose-500"
-                          />
-                          <p className="text-xs text-muted-foreground">e.g., 15 for 15% VAT</p>
+                          <Label className="font-medium">Tax Type</Label>
+                          <Select 
+                            value={formData.taxType} 
+                            onValueChange={(v) => setFormData({ ...formData, taxType: v as 'PERCENTAGE' | 'FIXED_AMOUNT' })}
+                          >
+                            <SelectTrigger className="border-rose-500/20 focus:border-rose-500">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
+                              <SelectItem value="FIXED_AMOUNT">Fixed Amount</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
-                      ) : (
+                        {formData.taxType === 'PERCENTAGE' ? (
+                          <div className="space-y-2">
+                            <Label className="font-medium">Tax Rate (%)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={formData.taxRate}
+                              onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) || 0 })}
+                              className="border-rose-500/20 focus:border-rose-500"
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Label className="font-medium">Fixed Tax Amount (ETB)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={formData.taxFixedAmount}
+                              onChange={(e) => setFormData({ ...formData, taxFixedAmount: parseFloat(e.target.value) || 0 })}
+                              className="border-rose-500/20 focus:border-rose-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tax Preview */}
+                      <div className="p-4 rounded-lg bg-white dark:bg-gray-900 border border-border/50">
+                        <p className="text-sm font-medium mb-3">Tax Preview</p>
                         <div className="space-y-2">
-                          <Label className="font-medium">Fixed Tax Amount (ETB)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={formData.taxFixedAmount}
-                            onChange={(e) => setFormData({ ...formData, taxFixedAmount: parseFloat(e.target.value) || 0 })}
-                            className="border-rose-500/20 focus:border-rose-500"
-                          />
-                          <p className="text-xs text-muted-foreground">Fixed amount per invoice</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tax Preview */}
-                    <div className="p-4 rounded-lg bg-gradient-to-r from-muted/50 to-muted/30 border border-border/50">
-                      <p className="text-sm font-medium mb-2">Tax Preview</p>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Subtotal (Example):</span>
-                          <span>10,000.00 ETB</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            {formData.taxName} ({formData.taxType === 'PERCENTAGE' ? `${formData.taxRate}%` : 'Fixed'}):
-                          </span>
-                          <span className="font-medium text-rose-600">
-                            {formData.taxType === 'PERCENTAGE' 
-                              ? `${(10000 * (formData.taxRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
-                              : `${formData.taxFixedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
-                            }
-                          </span>
-                        </div>
-                        <Separator className="my-2" />
-                        <div className="flex justify-between font-semibold">
-                          <span>Total:</span>
-                          <span className="text-primary">
-                            {formData.taxType === 'PERCENTAGE'
-                              ? `${(10000 * (1 + formData.taxRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
-                              : `${(10000 + formData.taxFixedAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
-                            }
-                          </span>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Subtotal (Example):</span>
+                            <span>10,000.00 ETB</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              {formData.taxName} ({formData.taxType === 'PERCENTAGE' ? `${formData.taxRate}%` : 'Fixed'}):
+                            </span>
+                            <span className="font-medium text-rose-600">
+                              {formData.taxType === 'PERCENTAGE' 
+                                ? `${(10000 * (formData.taxRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                                : `${formData.taxFixedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                              }
+                            </span>
+                          </div>
+                          <Separator className="my-2" />
+                          <div className="flex justify-between font-semibold">
+                            <span>Total:</span>
+                            <span className="text-primary">
+                              {formData.taxType === 'PERCENTAGE'
+                                ? `${(10000 * (1 + formData.taxRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                                : `${(10000 + formData.taxFixedAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                              }
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <Separator />
-
-                  {/* Tax Application Settings */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <FileText className="h-4 w-4" />
-                      TAX APPLICATION
+                    {/* Tax Application Settings */}
+                    <div className="space-y-3">
+                      <h4 className="font-medium flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-rose-600" />
+                        Tax Application
+                      </h4>
+                      {[
+                        { 
+                          key: 'applyTaxToInvoices', 
+                          label: 'Apply Tax to Invoices', 
+                          desc: 'Add tax to all generated invoices',
+                          icon: Receipt,
+                          color: 'rose'
+                        },
+                        { 
+                          key: 'applyTaxToContracts', 
+                          label: 'Apply Tax to Contracts', 
+                          desc: 'Include tax in contract calculations',
+                          icon: FileText,
+                          color: 'amber'
+                        },
+                        { 
+                          key: 'taxIncludeInPrice', 
+                          label: 'Tax Included in Price', 
+                          desc: 'Tax is already included in rent prices',
+                          icon: Wallet,
+                          color: 'emerald'
+                        },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <div key={item.key} className="flex items-center justify-between p-4 rounded-xl bg-muted/30 border border-border/50">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded-lg bg-${item.color}-100 dark:bg-${item.color}-900/30`}>
+                                <Icon className={`h-4 w-4 text-${item.color}-600`} />
+                              </div>
+                              <div>
+                                <Label className="font-medium">{item.label}</Label>
+                                <p className="text-xs text-muted-foreground">{item.desc}</p>
+                              </div>
+                            </div>
+                            <Switch
+                              checked={formData[item.key as keyof typeof formData] as boolean}
+                              onCheckedChange={(v) => setFormData({ ...formData, [item.key]: v })}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="grid gap-3">
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-rose-500/10">
-                            <Receipt className="h-4 w-4 text-rose-600" />
-                          </div>
-                          <div>
-                            <Label className="font-medium">Apply Tax to Invoices</Label>
-                            <p className="text-xs text-muted-foreground">Add tax to all generated invoices</p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={formData.applyTaxToInvoices}
-                          onCheckedChange={(v) => setFormData({ ...formData, applyTaxToInvoices: v })}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-amber-500/10">
-                            <FileText className="h-4 w-4 text-amber-600" />
-                          </div>
-                          <div>
-                            <Label className="font-medium">Apply Tax to Contracts</Label>
-                            <p className="text-xs text-muted-foreground">Include tax in contract calculations</p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={formData.applyTaxToContracts}
-                          onCheckedChange={(v) => setFormData({ ...formData, applyTaxToContracts: v })}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-emerald-500/10">
-                            <Wallet className="h-4 w-4 text-emerald-600" />
-                          </div>
-                          <div>
-                            <Label className="font-medium">Tax Included in Price</Label>
-                            <p className="text-xs text-muted-foreground">Tax is already included in rent prices</p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={formData.taxIncludeInPrice}
-                          onCheckedChange={(v) => setFormData({ ...formData, taxIncludeInPrice: v })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
+                  </>
+                )}
 
-              <div className="flex justify-end pt-4 border-t border-border/50">
-                <Button type="submit" className="bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700">
-                  Save Tax Settings
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        )}
-      </Card>
-
-      {/* Future Settings Placeholder - Integrations */}
-      <Card className="border-dashed border-2 border-border/50">
-        <div 
-          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-          onClick={() => toggleSection('integrations')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/10">
-              <Zap className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Integrations</CardTitle>
-              <CardDescription>Connect third-party services (Coming Soon)</CardDescription>
-            </div>
-          </div>
-          <Badge variant="outline" className="text-purple-600 border-purple-500/20 bg-purple-50">
-            <Zap className="h-3 w-3 mr-1" /> Coming Soon
-          </Badge>
-        </div>
-        
-        {expandedSections.integrations && (
-          <CardContent className="pt-4 border-t border-border/50">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {[
-                { name: 'Chapa Payment', icon: CreditCard, desc: 'Online payment gateway' },
-                { name: 'Telebirr', icon: Phone, desc: 'Mobile money integration' },
-                { name: 'Google Maps', icon: MapPin, desc: 'Property location services' },
-              ].map((integration) => (
-                <div key={integration.name} className="flex items-center gap-3 p-4 rounded-lg bg-muted/30 border border-border/50 opacity-60">
-                  <div className="p-2 rounded-lg bg-purple-500/10">
-                    <integration.icon className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{integration.name}</p>
-                    <p className="text-xs text-muted-foreground">{integration.desc}</p>
-                  </div>
+                <div className="flex justify-end pt-4 border-t border-border/50">
+                  <Button type="submit" className="bg-gradient-to-r from-rose-500 to-rose-600">
+                    Save Tax Settings
+                  </Button>
                 </div>
-              ))}
-            </div>
-          </CardContent>
+              </form>
+            </CardContent>
+          </Card>
         )}
-      </Card>
+
+        {/* Integrations Settings */}
+        {activeCategory === 'integrations' && (
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="border-b border-border/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                  <Zap className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <CardTitle>Integrations</CardTitle>
+                  <CardDescription>Connect third-party services to enhance your system</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { name: 'Chapa Payment', desc: 'Online payment gateway for Ethiopia', icon: CreditCard, status: 'coming-soon' },
+                  { name: 'Telebirr', desc: 'Mobile money integration', icon: Phone, status: 'coming-soon' },
+                  { name: 'CBE Birr', desc: 'Commercial Bank of Ethiopia', icon: Banknote, status: 'coming-soon' },
+                  { name: 'Google Maps', desc: 'Property location services', icon: MapPin, status: 'coming-soon' },
+                ].map((integration) => {
+                  const Icon = integration.icon;
+                  return (
+                    <div key={integration.name} className="p-4 rounded-xl bg-muted/30 border border-border/50 opacity-70">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/30">
+                            <Icon className="h-5 w-5 text-purple-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{integration.name}</p>
+                            <p className="text-sm text-muted-foreground">{integration.desc}</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="text-purple-600 border-purple-500/20 bg-purple-50">
+                          Coming Soon
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
