@@ -97,7 +97,7 @@ export default function PropertyManagementSystem() {
     try {
       const data = await api<{ user: User }>('/auth/me');
       setUser(data.user);
-      await loadData();
+      await loadData(data.user); // Pass user directly
     } catch {
       setUser(null);
     } finally {
@@ -105,7 +105,7 @@ export default function PropertyManagementSystem() {
     }
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (currentUser?: User) => {
     try {
       const [settingsData, statsData] = await Promise.all([
         api<SystemSettings>('/settings'),
@@ -114,19 +114,28 @@ export default function PropertyManagementSystem() {
       setSettings(settingsData);
       setStats(statsData);
 
+      // Use passed user or fall back to state
+      const role = currentUser?.role || user?.role;
+
       // Load role-specific data
-      if (user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') {
-        const [propsData, usersData, assignsData] = await Promise.all([
+      if (role === 'SYSTEM_ADMIN' || role === 'OWNER') {
+        const [propsData, usersData, assignsData, tenantsData, unitsData, contractsData] = await Promise.all([
           api<Property[]>('/properties'),
           api<User[]>('/users'),
           api<PropertyAssignment[]>('/assignments'),
+          api<Tenant[]>('/tenants'),
+          api<Unit[]>('/units'),
+          api<Contract[]>('/contracts'),
         ]);
         setProperties(propsData);
         setUsers(usersData);
         setAssignments(assignsData);
+        setTenants(tenantsData);
+        setUnits(unitsData);
+        setContracts(contractsData);
       }
 
-      if (user?.role === 'PROPERTY_ADMIN') {
+      if (role === 'PROPERTY_ADMIN') {
         const [propsData, assignsData, unitsData, tenantsData, contractsData] = await Promise.all([
           api<Property[]>('/properties'),
           api<PropertyAssignment[]>('/assignments'),
@@ -141,7 +150,7 @@ export default function PropertyManagementSystem() {
         setContracts(contractsData);
       }
 
-      if (user?.role === 'ACCOUNTANT' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') {
+      if (role === 'ACCOUNTANT' || role === 'SYSTEM_ADMIN' || role === 'OWNER') {
         const [paymentsData, invoicesData, terminationsData] = await Promise.all([
           api<Payment[]>('/payments'),
           api<Invoice[]>('/invoices'),
@@ -152,7 +161,7 @@ export default function PropertyManagementSystem() {
         setTerminations(terminationsData);
       }
 
-      if (user?.role === 'TENANT') {
+      if (role === 'TENANT') {
         const [contractsData, invoicesData, paymentsData] = await Promise.all([
           api<Contract[]>('/contracts'),
           api<Invoice[]>('/invoices'),
