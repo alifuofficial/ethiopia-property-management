@@ -114,12 +114,16 @@ export default function PropertyManagementSystem() {
         setAssignments(assignsData);
       }
 
-      if (user?.role === 'PROPERTY_ADMIN' || user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') {
-        const [unitsData, tenantsData, contractsData] = await Promise.all([
+      if (user?.role === 'PROPERTY_ADMIN') {
+        const [propsData, assignsData, unitsData, tenantsData, contractsData] = await Promise.all([
+          api<Property[]>('/properties'),
+          api<PropertyAssignment[]>('/assignments'),
           api<Unit[]>('/units'),
           api<Tenant[]>('/tenants'),
           api<Contract[]>('/contracts'),
         ]);
+        setProperties(propsData);
+        setAssignments(assignsData);
         setUnits(unitsData);
         setTenants(tenantsData);
         setContracts(contractsData);
@@ -323,7 +327,7 @@ export default function PropertyManagementSystem() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-6">
-          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} />}
+          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} />}
           {currentView === 'users' && <UsersView users={users} setUsers={setUsers} />}
           {currentView === 'properties' && <PropertiesView properties={properties} setProperties={setProperties} />}
           {currentView === 'assignments' && <AssignmentsView assignments={assignments} setAssignments={setAssignments} users={users} properties={properties} />}
@@ -679,8 +683,19 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 // Dashboard View
-function DashboardView({ stats, user }: { stats: DashboardStats | null; user: User | null }) {
+function DashboardView({ stats, user, assignments, properties }: { 
+  stats: DashboardStats | null; 
+  user: User | null;
+  assignments: PropertyAssignment[];
+  properties: Property[];
+}) {
   if (!stats) return <div>Loading...</div>;
+
+  // Get assigned properties for Property Admin
+  const userAssignedPropertyIds = assignments
+    .filter(a => a.userId === user?.id)
+    .map(a => a.propertyId);
+  const assignedProperties = properties.filter(p => userAssignedPropertyIds.includes(p.id));
 
   const occupancyRate = stats.totalUnits > 0 ? Math.round((stats.occupiedUnits / stats.totalUnits) * 100) : 0;
   const availableRate = stats.totalUnits > 0 ? Math.round((stats.availableUnits / stats.totalUnits) * 100) : 0;
@@ -720,6 +735,14 @@ function DashboardView({ stats, user }: { stats: DashboardStats | null; user: Us
     { name: 'Week 4', collections: 105000, target: 95000 },
   ];
 
+  // Role-specific welcome message
+  const getWelcomeMessage = () => {
+    if (user?.role === 'PROPERTY_ADMIN') {
+      return `Managing ${assignedProperties.length} assigned properties`;
+    }
+    return "Here's what's happening with your properties today.";
+  };
+
   return (
     <div className="space-y-6">
       {/* Header with gradient */}
@@ -728,19 +751,77 @@ function DashboardView({ stats, user }: { stats: DashboardStats | null; user: Us
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">
             Welcome back, {user?.name}! 👋
           </h1>
-          <p className="text-muted-foreground mt-1">Here's what's happening with your properties today.</p>
+          <p className="text-muted-foreground mt-1">{getWelcomeMessage()}</p>
         </div>
         <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-green-500/10 blur-3xl" />
         <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl" />
       </div>
 
+      {/* Property Admin: Assigned Properties Section */}
+      {user?.role === 'PROPERTY_ADMIN' && (
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">My Assigned Properties</CardTitle>
+                  <CardDescription>Properties you are responsible for managing</CardDescription>
+                </div>
+              </div>
+              <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
+                {assignedProperties.length} Properties
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {assignedProperties.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {assignedProperties.map((property) => (
+                  <div key={property.id} className="group p-4 rounded-xl bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-primary/30 transition-all">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                        <Building className="h-5 w-5 text-primary" />
+                      </div>
+                      <Badge variant="outline" className="text-xs bg-background">
+                        {property.city}
+                      </Badge>
+                    </div>
+                    <h3 className="font-semibold text-base mb-1">{property.name}</h3>
+                    <p className="text-sm text-muted-foreground mb-3 line-clamp-1">{property.address}</p>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <DoorOpen className="h-3 w-3" />
+                        {property.totalUnits} units
+                      </span>
+                      <span className={`flex items-center gap-1 ${property.isActive ? 'text-green-600' : 'text-muted-foreground'}`}>
+                        <div className={`h-2 w-2 rounded-full ${property.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        {property.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Building2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>No properties assigned to you yet</p>
+                <p className="text-sm">Contact your administrator for property assignments</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats Cards with Colors */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard 
-          title="Total Properties" 
-          value={stats.totalProperties} 
+          title={user?.role === 'PROPERTY_ADMIN' ? "Assigned Properties" : "Total Properties"} 
+          value={user?.role === 'PROPERTY_ADMIN' ? assignedProperties.length : stats.totalProperties} 
           icon={<Building2 className="h-5 w-5" />}
-          trend="+2 this month"
+          trend={user?.role === 'PROPERTY_ADMIN' ? undefined : "+2 this month"}
           trendUp={true}
           color="green"
         />

@@ -10,7 +10,25 @@ export async function GET(request: NextRequest) {
     }
 
     const currentUser = await db.user.findUnique({ where: { id: sessionId } });
-    if (!currentUser || !['SYSTEM_ADMIN', 'OWNER'].includes(currentUser.role)) {
+    if (!currentUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    // Property Admin can only see their own assignments
+    if (currentUser.role === 'PROPERTY_ADMIN' || currentUser.role === 'ACCOUNTANT') {
+      const assignments = await db.propertyAssignment.findMany({
+        where: { userId: currentUser.id },
+        include: {
+          property: true,
+        },
+        orderBy: { assignedAt: 'desc' },
+      });
+
+      return NextResponse.json(assignments);
+    }
+
+    // System Admin and Owner can see all assignments
+    if (!['SYSTEM_ADMIN', 'OWNER'].includes(currentUser.role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
