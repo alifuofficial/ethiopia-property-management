@@ -3567,16 +3567,16 @@ function UnitsView({ units, setUnits, properties }: {
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setSelectedUnit(null); resetForm(); } }}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="flex-shrink-0 p-6 pb-0">
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5 text-teal-600" />
               Edit Unit
             </DialogTitle>
             <DialogDescription>Update unit information</DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 -mx-4">
-            <form id="edit-form" onSubmit={handleEdit} className="space-y-4 px-4">
+          <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
+            <form id="edit-form" onSubmit={handleEdit} className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Property</Label>
                 <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
@@ -3648,8 +3648,8 @@ function UnitsView({ units, setUnits, properties }: {
                 <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="border-teal-500/20" />
               </div>
             </form>
-          </ScrollArea>
-          <DialogFooter className="gap-2 flex-shrink-0 px-4">
+          </div>
+          <DialogFooter className="gap-2 flex-shrink-0 p-6 pt-0 border-t">
             <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedUnit(null); resetForm(); }}>Cancel</Button>
             <Button type="submit" form="edit-form" className="bg-gradient-to-r from-teal-500 to-teal-600">Update Unit</Button>
           </DialogFooter>
