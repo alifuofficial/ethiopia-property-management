@@ -25,7 +25,7 @@ import {
   TrendingUp, PieChart, BarChart3, Upload, Send, MessageSquare, Mail,
   Phone, MapPin, Calendar, CreditCard, Banknote, FileCheck, UserCheck,
   Building, DoorOpen, Receipt, Wallet, ArrowRightLeft, Bell,
-  ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown
+  ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown, Calculator
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
@@ -5107,8 +5107,19 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between p-2 rounded-lg bg-orange-50">
                     <span className="text-sm text-muted-foreground">Amount</span>
-                    <span className="font-bold text-orange-600">{invoice.amount.toLocaleString()} ETB</span>
+                    <div className="text-right">
+                      <span className="font-bold text-orange-600">{invoice.amount.toLocaleString()} ETB</span>
+                      {invoice.taxAmount > 0 && (
+                        <p className="text-xs text-muted-foreground">+ {invoice.taxAmount.toLocaleString()} tax</p>
+                      )}
+                    </div>
                   </div>
+                  {invoice.taxAmount > 0 && (
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-rose-50">
+                      <span className="text-sm text-muted-foreground">Total with Tax</span>
+                      <span className="font-bold text-rose-600">{(invoice.totalAmount || invoice.amount + (invoice.taxAmount || 0)).toLocaleString()} ETB</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-sm">
                     <Wallet className="h-4 w-4 text-muted-foreground" />
                     <span>Paid: <span className="font-semibold text-green-600">{invoice.paidAmount?.toLocaleString() || 0} ETB</span></span>
@@ -5232,14 +5243,44 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
                 </div>
                 {getStatusBadge(selectedInvoice.status)}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <p className="text-sm text-muted-foreground">Total Amount</p>
-                  <p className="text-xl font-bold text-orange-600">{selectedInvoice.amount.toLocaleString()} ETB</p>
+              
+              {/* Amount Breakdown */}
+              <div className="p-4 rounded-lg bg-gradient-to-r from-muted/50 to-muted/30 border">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Base Amount:</span>
+                    <span className="font-medium">{selectedInvoice.amount.toLocaleString()} ETB</span>
+                  </div>
+                  {selectedInvoice.taxAmount > 0 && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Tax {selectedInvoice.taxRate > 0 ? `(${selectedInvoice.taxRate}%)` : ''}:
+                        </span>
+                        <span className="font-medium text-rose-600">{selectedInvoice.taxAmount.toLocaleString()} ETB</span>
+                      </div>
+                      <Separator className="my-2" />
+                    </>
+                  )}
+                  <div className="flex justify-between font-semibold text-base">
+                    <span>Total:</span>
+                    <span className="text-primary">
+                      {((selectedInvoice.totalAmount || selectedInvoice.amount + (selectedInvoice.taxAmount || 0))).toLocaleString()} ETB
+                    </span>
+                  </div>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-lg bg-muted/50">
                   <p className="text-sm text-muted-foreground">Paid Amount</p>
                   <p className="text-xl font-bold text-green-600">{selectedInvoice.paidAmount?.toLocaleString() || 0} ETB</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Balance Due</p>
+                  <p className="text-xl font-bold text-amber-600">
+                    {((selectedInvoice.totalAmount || selectedInvoice.amount + (selectedInvoice.taxAmount || 0)) - (selectedInvoice.paidAmount || 0)).toLocaleString()} ETB
+                  </p>
                 </div>
               </div>
               <div className="p-4 rounded-lg bg-muted/50">
@@ -6267,6 +6308,16 @@ function SettingsView({ settings, setSettings }: {
     whatsappNotificationEnabled: settings?.whatsappNotificationEnabled ?? false,
     advancePaymentMaxMonths: settings?.advancePaymentMaxMonths ?? 6,
     latePaymentPenaltyPercent: settings?.latePaymentPenaltyPercent ?? 5,
+    // Tax Settings
+    taxEnabled: settings?.taxEnabled ?? false,
+    taxName: settings?.taxName ?? 'VAT',
+    taxType: settings?.taxType ?? 'PERCENTAGE',
+    taxRate: settings?.taxRate ?? 15,
+    taxFixedAmount: settings?.taxFixedAmount ?? 0,
+    taxRegistrationNumber: settings?.taxRegistrationNumber ?? '',
+    taxIncludeInPrice: settings?.taxIncludeInPrice ?? false,
+    applyTaxToInvoices: settings?.applyTaxToInvoices ?? true,
+    applyTaxToContracts: settings?.applyTaxToContracts ?? true,
   }));
 
   // SMS Settings state
@@ -6283,6 +6334,7 @@ function SettingsView({ settings, setSettings }: {
     sms: true,
     notifications: true,
     payments: false,
+    tax: false,
     portal: false,
     integrations: false,
   });
@@ -6409,7 +6461,7 @@ function SettingsView({ settings, setSettings }: {
       </div>
 
       {/* Quick Settings Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Card className="group bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('notifications')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -6435,6 +6487,20 @@ function SettingsView({ settings, setSettings }: {
               <div>
                 <p className="text-sm font-medium">SMS</p>
                 <p className="text-xs text-muted-foreground">{smsSettings.hasApiKey ? 'Configured' : 'Setup needed'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-rose-500/10 to-rose-500/5 border-rose-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('tax')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-rose-500/10 group-hover:bg-rose-500/20 transition-colors">
+                <Receipt className="h-4 w-4 text-rose-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Tax</p>
+                <p className="text-xs text-muted-foreground">{formData.taxEnabled ? `${formData.taxRate}% ${formData.taxName}` : 'Disabled'}</p>
               </div>
             </div>
           </CardContent>
@@ -6735,6 +6801,242 @@ function SettingsView({ settings, setSettings }: {
               <div className="flex justify-end pt-4 border-t border-border/50">
                 <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500 shadow-lg shadow-primary/20">
                   Save All Settings
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Tax Configuration Card */}
+      <Card className="border-border/50 shadow-sm overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+          onClick={() => toggleSection('tax')}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-rose-500/20 to-rose-500/10">
+              <Receipt className="h-5 w-5 text-rose-600" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Tax Configuration</CardTitle>
+              <CardDescription>Configure tax settings for invoices and contracts</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {formData.taxEnabled && (
+              <Badge variant="outline" className="text-rose-600 border-rose-500/20 bg-rose-50">
+                <Check className="h-3 w-3 mr-1" /> Active
+              </Badge>
+            )}
+            <div className={`transition-transform duration-200 ${expandedSections.tax ? 'rotate-180' : ''}`}>
+              <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+        
+        {expandedSections.tax && (
+          <CardContent className="pt-4 border-t border-border/50">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Enable Tax Toggle */}
+              <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-rose-500/10">
+                    <Receipt className="h-5 w-5 text-rose-600" />
+                  </div>
+                  <div>
+                    <Label className="font-medium text-base">Enable Tax System</Label>
+                    <p className="text-sm text-muted-foreground">Apply tax to invoices and contracts</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={formData.taxEnabled}
+                  onCheckedChange={(v) => setFormData({ ...formData, taxEnabled: v })}
+                />
+              </div>
+
+              {formData.taxEnabled && (
+                <>
+                  <Separator />
+                  
+                  {/* Basic Tax Settings */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Settings className="h-4 w-4" />
+                      BASIC TAX SETTINGS
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="font-medium">Tax Name</Label>
+                        <Input
+                          value={formData.taxName}
+                          onChange={(e) => setFormData({ ...formData, taxName: e.target.value })}
+                          placeholder="e.g., VAT, GST, Sales Tax"
+                          className="border-rose-500/20 focus:border-rose-500"
+                        />
+                        <p className="text-xs text-muted-foreground">Display name for tax on documents</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="font-medium">Tax Registration Number</Label>
+                        <Input
+                          value={formData.taxRegistrationNumber}
+                          onChange={(e) => setFormData({ ...formData, taxRegistrationNumber: e.target.value })}
+                          placeholder="e.g., TIN-123456789"
+                          className="border-rose-500/20 focus:border-rose-500"
+                        />
+                        <p className="text-xs text-muted-foreground">Your business tax ID (optional)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Tax Calculation Method */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Calculator className="h-4 w-4" />
+                      TAX CALCULATION METHOD
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="font-medium">Tax Type</Label>
+                        <Select 
+                          value={formData.taxType} 
+                          onValueChange={(v) => setFormData({ ...formData, taxType: v as 'PERCENTAGE' | 'FIXED_AMOUNT' })}
+                        >
+                          <SelectTrigger className="border-rose-500/20 focus:border-rose-500">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
+                            <SelectItem value="FIXED_AMOUNT">Fixed Amount</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {formData.taxType === 'PERCENTAGE' ? (
+                        <div className="space-y-2">
+                          <Label className="font-medium">Tax Rate (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.taxRate}
+                            onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) || 0 })}
+                            className="border-rose-500/20 focus:border-rose-500"
+                          />
+                          <p className="text-xs text-muted-foreground">e.g., 15 for 15% VAT</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Label className="font-medium">Fixed Tax Amount (ETB)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.taxFixedAmount}
+                            onChange={(e) => setFormData({ ...formData, taxFixedAmount: parseFloat(e.target.value) || 0 })}
+                            className="border-rose-500/20 focus:border-rose-500"
+                          />
+                          <p className="text-xs text-muted-foreground">Fixed amount per invoice</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tax Preview */}
+                    <div className="p-4 rounded-lg bg-gradient-to-r from-muted/50 to-muted/30 border border-border/50">
+                      <p className="text-sm font-medium mb-2">Tax Preview</p>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Subtotal (Example):</span>
+                          <span>10,000.00 ETB</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">
+                            {formData.taxName} ({formData.taxType === 'PERCENTAGE' ? `${formData.taxRate}%` : 'Fixed'}):
+                          </span>
+                          <span className="font-medium text-rose-600">
+                            {formData.taxType === 'PERCENTAGE' 
+                              ? `${(10000 * (formData.taxRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                              : `${formData.taxFixedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                            }
+                          </span>
+                        </div>
+                        <Separator className="my-2" />
+                        <div className="flex justify-between font-semibold">
+                          <span>Total:</span>
+                          <span className="text-primary">
+                            {formData.taxType === 'PERCENTAGE'
+                              ? `${(10000 * (1 + formData.taxRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                              : `${(10000 + formData.taxFixedAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB`
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Tax Application Settings */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <FileText className="h-4 w-4" />
+                      TAX APPLICATION
+                    </div>
+                    <div className="grid gap-3">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-rose-500/10">
+                            <Receipt className="h-4 w-4 text-rose-600" />
+                          </div>
+                          <div>
+                            <Label className="font-medium">Apply Tax to Invoices</Label>
+                            <p className="text-xs text-muted-foreground">Add tax to all generated invoices</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={formData.applyTaxToInvoices}
+                          onCheckedChange={(v) => setFormData({ ...formData, applyTaxToInvoices: v })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-amber-500/10">
+                            <FileText className="h-4 w-4 text-amber-600" />
+                          </div>
+                          <div>
+                            <Label className="font-medium">Apply Tax to Contracts</Label>
+                            <p className="text-xs text-muted-foreground">Include tax in contract calculations</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={formData.applyTaxToContracts}
+                          onCheckedChange={(v) => setFormData({ ...formData, applyTaxToContracts: v })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-emerald-500/10">
+                            <Wallet className="h-4 w-4 text-emerald-600" />
+                          </div>
+                          <div>
+                            <Label className="font-medium">Tax Included in Price</Label>
+                            <p className="text-xs text-muted-foreground">Tax is already included in rent prices</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={formData.taxIncludeInPrice}
+                          onCheckedChange={(v) => setFormData({ ...formData, taxIncludeInPrice: v })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end pt-4 border-t border-border/50">
+                <Button type="submit" className="bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700">
+                  Save Tax Settings
                 </Button>
               </div>
             </form>

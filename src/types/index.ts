@@ -12,6 +12,8 @@ export type InvoiceStatus = 'PENDING' | 'PAID' | 'PARTIALLY_PAID' | 'OVERDUE' | 
 
 export type TerminationStatus = 'PENDING' | 'ACCOUNTANT_APPROVED' | 'OWNER_APPROVED' | 'COMPLETED' | 'REJECTED';
 
+export type TaxType = 'PERCENTAGE' | 'FIXED_AMOUNT';
+
 export interface User {
   id: string;
   email: string;
@@ -106,6 +108,9 @@ export interface Invoice {
   contractId: string;
   invoiceNumber: string;
   amount: number;
+  taxAmount: number;
+  taxRate: number;
+  totalAmount: number;
   dueDate: string;
   periodStart: string;
   periodEnd: string;
@@ -179,6 +184,16 @@ export interface SystemSettings {
   whatsappNotificationEnabled: boolean;
   advancePaymentMaxMonths: number;
   latePaymentPenaltyPercent: number;
+  // Tax Configuration
+  taxEnabled: boolean;
+  taxName: string;
+  taxType: TaxType;
+  taxRate: number;
+  taxFixedAmount: number;
+  taxRegistrationNumber?: string;
+  taxIncludeInPrice: boolean;
+  applyTaxToInvoices: boolean;
+  applyTaxToContracts: boolean;
 }
 
 export interface DashboardStats {

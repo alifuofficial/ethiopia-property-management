@@ -61,6 +61,12 @@ enum TerminationStatus {
   REJECTED
 }
 
+// Tax calculation type
+enum TaxType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
@@ -97,6 +103,17 @@ model SystemSettings {
   smsApiKey             String?  // SMSEthiopia API Key
   smsSenderId           String?  // Optional sender ID
   smsBaseUrl            String   @default("https://smsethiopia.et/api/")
+  
+  // Tax Configuration
+  taxEnabled            Boolean  @default(false)
+  taxName               String   @default("VAT")
+  taxType               TaxType  @default(PERCENTAGE)
+  taxRate               Float    @default(15.0)  // Percentage (e.g., 15% VAT)
+  taxFixedAmount        Float    @default(0)     // Fixed amount per invoice
+  taxRegistrationNumber String?  // Business tax registration number
+  taxIncludeInPrice     Boolean  @default(false) // Whether tax is included in rent price
+  applyTaxToInvoices    Boolean  @default(true)
+  applyTaxToContracts   Boolean  @default(true)
   
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -231,6 +248,9 @@ model Invoice {
   contractId        String
   invoiceNumber     String   @unique
   amount            Float
+  taxAmount         Float    @default(0)
+  taxRate           Float    @default(0)
+  totalAmount       Float    @default(0)
   dueDate           DateTime
   periodStart       DateTime
   periodEnd         DateTime

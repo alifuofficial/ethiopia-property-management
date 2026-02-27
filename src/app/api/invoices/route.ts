@@ -149,11 +149,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Get tax settings
+    const settings = await db.systemSettings.findFirst();
+    const baseAmount = parseFloat(amount);
+    let taxAmount = 0;
+    let taxRate = 0;
+    let totalAmount = baseAmount;
+
+    // Calculate tax if enabled
+    if (settings?.taxEnabled && settings?.applyTaxToInvoices) {
+      if (settings.taxType === 'PERCENTAGE') {
+        taxRate = settings.taxRate;
+        taxAmount = baseAmount * (taxRate / 100);
+      } else {
+        // Fixed amount
+        taxAmount = settings.taxFixedAmount;
+        taxRate = 0; // Fixed amount doesn't have a rate
+      }
+      
+      // If tax is included in price, extract it from the base amount
+      if (settings.taxIncludeInPrice) {
+        if (settings.taxType === 'PERCENTAGE') {
+          taxAmount = baseAmount * (taxRate / (100 + taxRate));
+          totalAmount = baseAmount; // Total is the base amount
+        }
+      } else {
+        totalAmount = baseAmount + taxAmount;
+      }
+    }
+
     const invoice = await db.invoice.create({
       data: {
         contractId,
         invoiceNumber: generateInvoiceNumber(),
-        amount: parseFloat(amount),
+        amount: baseAmount,
+        taxAmount,
+        taxRate,
+        totalAmount,
         dueDate: new Date(dueDate),
         periodStart: new Date(periodStart),
         periodEnd: new Date(periodEnd),
