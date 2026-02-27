@@ -72,6 +72,9 @@ export async function PUT(
     const body = await request.json();
     const { email, password, fullName, phone, address, idType, idNumber, idDocumentUrl, emergencyContact, emergencyPhone } = body;
 
+    console.log('Update tenant request body:', body);
+    console.log('idDocumentUrl received:', idDocumentUrl);
+
     // Check if tenant exists
     const existingTenant = await db.tenant.findUnique({
       where: { id },
@@ -106,24 +109,41 @@ export async function PUT(
         });
       }
 
+      // Build tenant update data
+      const tenantUpdateData: {
+        fullName?: string;
+        phone?: string;
+        email?: string;
+        address?: string | null;
+        idType?: string | null;
+        idNumber?: string | null;
+        idDocumentUrl?: string | null;
+        emergencyContact?: string | null;
+        emergencyPhone?: string | null;
+      } = {};
+
+      if (fullName) tenantUpdateData.fullName = fullName;
+      if (phone) tenantUpdateData.phone = phone;
+      if (email) tenantUpdateData.email = email;
+      if (address !== undefined) tenantUpdateData.address = address || null;
+      if (idType !== undefined) tenantUpdateData.idType = idType || null;
+      if (idNumber !== undefined) tenantUpdateData.idNumber = idNumber || null;
+      if (idDocumentUrl !== undefined) tenantUpdateData.idDocumentUrl = idDocumentUrl || null;
+      if (emergencyContact !== undefined) tenantUpdateData.emergencyContact = emergencyContact || null;
+      if (emergencyPhone !== undefined) tenantUpdateData.emergencyPhone = emergencyPhone || null;
+
+      console.log('Tenant update data:', tenantUpdateData);
+
       // Update tenant
       const tenant = await tx.tenant.update({
         where: { id },
-        data: {
-          fullName: fullName || existingTenant.fullName,
-          phone: phone || existingTenant.phone,
-          email: email || existingTenant.email,
-          address: address !== undefined ? address : existingTenant.address,
-          idType: idType !== undefined ? idType : existingTenant.idType,
-          idNumber: idNumber !== undefined ? idNumber : existingTenant.idNumber,
-          idDocumentUrl: idDocumentUrl !== undefined ? idDocumentUrl : existingTenant.idDocumentUrl,
-          emergencyContact: emergencyContact !== undefined ? emergencyContact : existingTenant.emergencyContact,
-          emergencyPhone: emergencyPhone !== undefined ? emergencyPhone : existingTenant.emergencyPhone,
-        },
+        data: tenantUpdateData,
         include: {
           user: true,
         },
       });
+
+      console.log('Updated tenant:', tenant);
 
       return tenant;
     });

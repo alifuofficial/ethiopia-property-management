@@ -4110,32 +4110,33 @@ function TenantsView({ tenants, setTenants }: {
     }
 
     setIsUploading(true);
-    try {
-      // Convert to base64
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64 = event.target?.result as string;
-        setIdDocumentPreview(base64);
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result as string;
+      setIdDocumentPreview(base64);
 
-        // Upload to server
-        try {
-          const result = await api<{ success: boolean; url: string }>('/upload', {
-            method: 'POST',
-            body: JSON.stringify({
-              file: base64,
-              fileName: `id_${Date.now()}`,
-            }),
-          });
-          setFormData(prev => ({ ...prev, idDocumentUrl: result.url }));
-          toast({ title: 'Success', description: 'ID document uploaded successfully' });
-        } catch (err) {
-          toast({ title: 'Error', description: 'Failed to upload document', variant: 'destructive' });
-        }
-      };
-      reader.readAsDataURL(file);
-    } finally {
-      setIsUploading(false);
-    }
+      // Upload to server
+      try {
+        const result = await api<{ success: boolean; url: string }>('/upload', {
+          method: 'POST',
+          body: JSON.stringify({
+            file: base64,
+            fileName: `id_${Date.now()}`,
+          }),
+        });
+        // Use functional update to ensure we get latest state
+        setFormData(prev => ({ ...prev, idDocumentUrl: result.url }));
+        console.log('Uploaded file URL:', result.url);
+        toast({ title: 'Success', description: 'ID document uploaded successfully' });
+      } catch (err) {
+        console.error('Upload error:', err);
+        toast({ title: 'Error', description: 'Failed to upload document', variant: 'destructive' });
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -4157,17 +4158,21 @@ function TenantsView({ tenants, setTenants }: {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTenant) return;
+    console.log('Submitting formData:', formData);
+    console.log('idDocumentUrl being sent:', formData.idDocumentUrl);
     try {
       const updated = await api<Tenant>(`/tenants/${selectedTenant.id}`, {
         method: 'PUT',
         body: JSON.stringify(formData),
       });
+      console.log('Updated tenant response:', updated);
       setTenants(tenants.map(t => t.id === selectedTenant.id ? updated : t));
       setIsEditDialogOpen(false);
       setSelectedTenant(null);
       resetForm();
       toast({ title: 'Success', description: 'Tenant updated successfully' });
     } catch (err) {
+      console.error('Update tenant error:', err);
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update tenant', variant: 'destructive' });
     }
   };
@@ -4379,7 +4384,14 @@ function TenantsView({ tenants, setTenants }: {
             </div>
             <DialogFooter className="p-6 pt-0 border-t">
               <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
-              <Button type="submit" form="tenant-form" className="bg-gradient-to-r from-violet-500 to-purple-600">Create Tenant</Button>
+              <Button 
+                type="submit" 
+                form="tenant-form" 
+                className="bg-gradient-to-r from-violet-500 to-purple-600"
+                disabled={isUploading}
+              >
+                {isUploading ? 'Uploading...' : 'Create Tenant'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -4803,7 +4815,14 @@ function TenantsView({ tenants, setTenants }: {
           </div>
           <DialogFooter className="p-6 pt-0 border-t">
             <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedTenant(null); resetForm(); }}>Cancel</Button>
-            <Button type="submit" form="edit-form" className="bg-gradient-to-r from-violet-500 to-purple-600">Update Tenant</Button>
+            <Button 
+              type="submit" 
+              form="edit-form" 
+              className="bg-gradient-to-r from-violet-500 to-purple-600"
+              disabled={isUploading}
+            >
+              {isUploading ? 'Uploading...' : 'Update Tenant'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
