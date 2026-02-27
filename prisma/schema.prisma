@@ -92,6 +92,12 @@ model SystemSettings {
   whatsappNotificationEnabled Boolean @default(false)
   advancePaymentMaxMonths  Int     @default(6)
   latePaymentPenaltyPercent Float  @default(5.0)
+  
+  // SMS Ethiopia API Configuration
+  smsApiKey             String?  // SMSEthiopia API Key
+  smsSenderId           String?  // Optional sender ID
+  smsBaseUrl            String   @default("https://smsethiopia.et/api/")
+  
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

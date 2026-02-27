@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Create assignment
+// Create assignment(s) - supports single and bulk operations
 export async function POST(request: NextRequest) {
   try {
     const sessionId = request.cookies.get('session')?.value;
@@ -49,44 +49,116 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userId, propertyId } = body;
+    const { userId, propertyId, userIds, propertyIds } = body;
 
-    if (!userId || !propertyId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    // Bulk assignment: one user to multiple properties
+    if (userId && propertyIds && Array.isArray(propertyIds)) {
+      // Validate user
+      const user = await db.user.findUnique({ where: { id: userId } });
+      if (!user || !['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(user.role)) {
+        return NextResponse.json({ error: 'User must be a Property Admin or Accountant' }, { status: 400 });
+      }
+
+      // Filter out existing assignments
+      const existingAssignments = await db.propertyAssignment.findMany({
+        where: { userId, propertyId: { in: propertyIds } },
+        select: { propertyId: true },
+      });
+      const existingPropertyIds = existingAssignments.map(a => a.propertyId);
+      const newPropertyIds = propertyIds.filter((id: string) => !existingPropertyIds.includes(id));
+
+      if (newPropertyIds.length === 0) {
+        return NextResponse.json({ error: 'All assignments already exist' }, { status: 400 });
+      }
+
+      // Create bulk assignments
+      const assignments = await db.propertyAssignment.createMany({
+        data: newPropertyIds.map((pid: string) => ({ userId, propertyId: pid })),
+      });
+
+      return NextResponse.json({ 
+        success: true, 
+        count: assignments.count,
+        message: `Created ${assignments.count} assignment(s)` 
+      });
     }
 
-    // Check if user exists and is property admin or accountant
-    const user = await db.user.findUnique({ where: { id: userId } });
-    if (!user || !['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(user.role)) {
-      return NextResponse.json({ error: 'User must be a Property Admin or Accountant' }, { status: 400 });
+    // Bulk assignment: multiple users to one property
+    if (propertyId && userIds && Array.isArray(userIds)) {
+      // Validate property
+      const property = await db.property.findUnique({ where: { id: propertyId } });
+      if (!property) {
+        return NextResponse.json({ error: 'Property not found' }, { status: 404 });
+      }
+
+      // Validate users
+      const users = await db.user.findMany({ where: { id: { in: userIds } } });
+      const invalidUsers = users.filter(u => !['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(u.role));
+      if (invalidUsers.length > 0) {
+        return NextResponse.json({ error: 'All users must be Property Admin or Accountant' }, { status: 400 });
+      }
+
+      // Filter out existing assignments
+      const existingAssignments = await db.propertyAssignment.findMany({
+        where: { propertyId, userId: { in: userIds } },
+        select: { userId: true },
+      });
+      const existingUserIds = existingAssignments.map(a => a.userId);
+      const newUserIds = userIds.filter((id: string) => !existingUserIds.includes(id));
+
+      if (newUserIds.length === 0) {
+        return NextResponse.json({ error: 'All assignments already exist' }, { status: 400 });
+      }
+
+      // Create bulk assignments
+      const assignments = await db.propertyAssignment.createMany({
+        data: newUserIds.map((uid: string) => ({ userId: uid, propertyId })),
+      });
+
+      return NextResponse.json({ 
+        success: true, 
+        count: assignments.count,
+        message: `Created ${assignments.count} assignment(s)` 
+      });
     }
 
-    // Check if assignment already exists
-    const existingAssignment = await db.propertyAssignment.findFirst({
-      where: { userId, propertyId },
-    });
-    if (existingAssignment) {
-      return NextResponse.json({ error: 'Assignment already exists' }, { status: 400 });
+    // Single assignment
+    if (userId && propertyId) {
+      // Check if user exists and is property admin or accountant
+      const user = await db.user.findUnique({ where: { id: userId } });
+      if (!user || !['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(user.role)) {
+        return NextResponse.json({ error: 'User must be a Property Admin or Accountant' }, { status: 400 });
+      }
+
+      // Check if assignment already exists
+      const existingAssignment = await db.propertyAssignment.findFirst({
+        where: { userId, propertyId },
+      });
+      if (existingAssignment) {
+        return NextResponse.json({ error: 'Assignment already exists' }, { status: 400 });
+      }
+
+      const assignment = await db.propertyAssignment.create({
+        data: { userId, propertyId },
+        include: {
+          user: true,
+          property: true,
+        },
+      });
+
+      const { user: { password: _, ...userWithoutPassword }, ...assignmentCleaned } = assignment;
+
+      return NextResponse.json({ ...assignmentCleaned, user: userWithoutPassword });
     }
 
-    const assignment = await db.propertyAssignment.create({
-      data: { userId, propertyId },
-      include: {
-        user: true,
-        property: true,
-      },
-    });
-
-    const { user: { password: _, ...userWithoutPassword }, ...assignmentCleaned } = assignment;
-
-    return NextResponse.json({ ...assignmentCleaned, user: userWithoutPassword });
+    return NextResponse.json({ error: 'Invalid request parameters' }, { status: 400 });
   } catch (error) {
     console.error('Create assignment error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Delete assignment
+// Delete assignment(s) - supports single and bulk operations
 export async function DELETE(request: NextRequest) {
   try {
     const sessionId = request.cookies.get('session')?.value;
@@ -101,14 +173,42 @@ export async function DELETE(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const ids = searchParams.get('ids');
+    const userId = searchParams.get('userId');
+    const propertyId = searchParams.get('propertyId');
 
-    if (!id) {
-      return NextResponse.json({ error: 'Assignment ID is required' }, { status: 400 });
+    // Bulk delete by IDs
+    if (ids) {
+      const idArray = ids.split(',');
+      const result = await db.propertyAssignment.deleteMany({
+        where: { id: { in: idArray } },
+      });
+      return NextResponse.json({ success: true, count: result.count });
     }
 
-    await db.propertyAssignment.delete({ where: { id } });
+    // Delete all assignments for a user
+    if (userId && !propertyId) {
+      const result = await db.propertyAssignment.deleteMany({
+        where: { userId },
+      });
+      return NextResponse.json({ success: true, count: result.count });
+    }
 
-    return NextResponse.json({ success: true });
+    // Delete all assignments for a property
+    if (propertyId && !userId) {
+      const result = await db.propertyAssignment.deleteMany({
+        where: { propertyId },
+      });
+      return NextResponse.json({ success: true, count: result.count });
+    }
+
+    // Delete specific assignment
+    if (id) {
+      await db.propertyAssignment.delete({ where: { id } });
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: 'Assignment ID or filters required' }, { status: 400 });
   } catch (error) {
     console.error('Delete assignment error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

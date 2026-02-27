@@ -25,7 +25,7 @@ import {
   TrendingUp, PieChart, BarChart3, Upload, Send, MessageSquare, Mail,
   Phone, MapPin, Calendar, CreditCard, Banknote, FileCheck, UserCheck,
   Building, DoorOpen, Receipt, Wallet, ArrowRightLeft, Bell,
-  ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star
+  ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
@@ -1049,7 +1049,13 @@ function QuickActionButton({ icon, label, color }: { icon: React.ReactNode; labe
 // Users View
 function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatch<React.SetStateAction<User[]>> }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -1059,26 +1065,82 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
     isActive: true,
   });
 
+  // Filter users
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (user.phone && user.phone.includes(searchQuery));
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+    const matchesStatus = statusFilter === 'all' || 
+                          (statusFilter === 'active' && user.isActive) ||
+                          (statusFilter === 'inactive' && !user.isActive);
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  // Role stats
+  const roleStats = {
+    total: users.length,
+    systemAdmin: users.filter(u => u.role === 'SYSTEM_ADMIN').length,
+    owner: users.filter(u => u.role === 'OWNER').length,
+    propertyAdmin: users.filter(u => u.role === 'PROPERTY_ADMIN').length,
+    accountant: users.filter(u => u.role === 'ACCOUNTANT').length,
+    tenant: users.filter(u => u.role === 'TENANT').length,
+    active: users.filter(u => u.isActive).length,
+    inactive: users.filter(u => !u.isActive).length,
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editingUser) {
+        const updateData = { ...formData };
+        if (!updateData.password) {
+          delete (updateData as Record<string, unknown>).password;
+        }
         const updated = await api<User>(`/users/${editingUser.id}`, {
           method: 'PUT',
-          body: JSON.stringify(formData),
+          body: JSON.stringify(updateData),
         });
         setUsers(users.map(u => u.id === updated.id ? updated : u));
+        toast({ title: 'Success', description: 'User updated successfully' });
       } else {
         const newUser = await api<User>('/users', {
           method: 'POST',
           body: JSON.stringify(formData),
         });
         setUsers([...users, newUser]);
+        toast({ title: 'Success', description: 'User created successfully' });
       }
       setIsDialogOpen(false);
       resetForm();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to save user', variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingUser) return;
+    try {
+      await api(`/users/${deletingUser.id}`, { method: 'DELETE' });
+      setUsers(users.filter(u => u.id !== deletingUser.id));
+      toast({ title: 'Success', description: 'User deleted successfully' });
+      setIsDeleteDialogOpen(false);
+      setDeletingUser(null);
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to delete user', variant: 'destructive' });
+    }
+  };
+
+  const handleToggleStatus = async (user: User) => {
+    try {
+      const updated = await api<User>(`/users/${user.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive: !user.isActive }),
+      });
+      setUsers(users.map(u => u.id === updated.id ? updated : u));
+      toast({ title: 'Success', description: `User ${!user.isActive ? 'activated' : 'deactivated'}` });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update user', variant: 'destructive' });
     }
   };
 
@@ -1093,96 +1155,450 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
     setIsDialogOpen(true);
   };
 
+  const openDelete = (user: User) => {
+    setDeletingUser(user);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const getRoleBadge = (role: string) => {
+    const roleStyles: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
+      SYSTEM_ADMIN: { bg: 'bg-purple-100', text: 'text-purple-700', icon: <Star className="h-3 w-3" /> },
+      OWNER: { bg: 'bg-amber-100', text: 'text-amber-700', icon: <Crown className="h-3 w-3" /> },
+      PROPERTY_ADMIN: { bg: 'bg-green-100', text: 'text-green-700', icon: <Building2 className="h-3 w-3" /> },
+      ACCOUNTANT: { bg: 'bg-blue-100', text: 'text-blue-700', icon: <DollarSign className="h-3 w-3" /> },
+      TENANT: { bg: 'bg-gray-100', text: 'text-gray-700', icon: <Users className="h-3 w-3" /> },
+    };
+    const style = roleStyles[role] || roleStyles.TENANT;
+    return (
+      <Badge className={`${style.bg} ${style.text} border-0 flex items-center gap-1`}>
+        {style.icon}
+        {role.replace('_', ' ')}
+      </Badge>
+    );
+  };
+
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Users</h1>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">User Management</h1>
+          <p className="text-muted-foreground mt-1">Manage system users and their roles</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Add User</Button>
+            <Button className="bg-gradient-to-r from-primary to-emerald-500 hover:from-primary/90 hover:to-emerald-500/90 shadow-lg shadow-primary/20">
+              <Plus className="mr-2 h-4 w-4" /> Add User
+            </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>{editingUser ? 'Edit User' : 'Add User'}</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                {editingUser ? <Edit className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
+                {editingUser ? 'Edit User' : 'Create New User'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingUser ? 'Update user information' : 'Add a new user to the system'}
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label>Name</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                <Label htmlFor="name" className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  Full Name
+                </Label>
+                <Input 
+                  id="name"
+                  placeholder="John Doe" 
+                  value={formData.name} 
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
+                  required 
+                />
               </div>
               <div className="space-y-2">
-                <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
+                <Label htmlFor="email" className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  Email Address
+                </Label>
+                <Input 
+                  id="email"
+                  type="email" 
+                  placeholder="john@example.com"
+                  value={formData.email} 
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })} 
+                  required 
+                />
               </div>
-              {!editingUser && (
-                <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required />
-                </div>
-              )}
               <div className="space-y-2">
-                <Label>Phone</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                <Label htmlFor="password" className="flex items-center gap-2">
+                  <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Password {editingUser && <span className="text-xs text-muted-foreground">(leave blank to keep current)</span>}
+                </Label>
+                <Input 
+                  id="password"
+                  type="password" 
+                  placeholder="••••••••"
+                  value={formData.password} 
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
+                  required={!editingUser} 
+                />
               </div>
               <div className="space-y-2">
-                <Label>Role</Label>
+                <Label htmlFor="phone" className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  Phone Number
+                </Label>
+                <Input 
+                  id="phone"
+                  placeholder="0912345678"
+                  value={formData.phone} 
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role" className="flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-muted-foreground" />
+                  Role
+                </Label>
                 <Select value={formData.role} onValueChange={(v) => setFormData({ ...formData, role: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="role">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="SYSTEM_ADMIN">System Admin</SelectItem>
-                    <SelectItem value="OWNER">Owner</SelectItem>
-                    <SelectItem value="PROPERTY_ADMIN">Property Admin</SelectItem>
-                    <SelectItem value="ACCOUNTANT">Accountant</SelectItem>
-                    <SelectItem value="TENANT">Tenant</SelectItem>
+                    <SelectItem value="SYSTEM_ADMIN">
+                      <div className="flex items-center gap-2">
+                        <Star className="h-4 w-4 text-purple-500" />
+                        System Admin
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="OWNER">
+                      <div className="flex items-center gap-2">
+                        <Crown className="h-4 w-4 text-amber-500" />
+                        Owner
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="PROPERTY_ADMIN">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-green-500" />
+                        Property Admin
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="ACCOUNTANT">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-blue-500" />
+                        Accountant
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="TENANT">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-gray-500" />
+                        Tenant
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center gap-2">
-                <Switch checked={formData.isActive} onCheckedChange={(v) => setFormData({ ...formData, isActive: v })} />
-                <Label>Active</Label>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Switch 
+                    id="isActive" 
+                    checked={formData.isActive} 
+                    onCheckedChange={(v) => setFormData({ ...formData, isActive: v })} 
+                  />
+                  <Label htmlFor="isActive" className="cursor-pointer">Active User</Label>
+                </div>
+                <Badge variant={formData.isActive ? 'default' : 'secondary'} className={formData.isActive ? 'bg-green-500' : ''}>
+                  {formData.isActive ? 'Active' : 'Inactive'}
+                </Badge>
               </div>
-              <DialogFooter>
-                <Button type="submit">{editingUser ? 'Update' : 'Create'}</Button>
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500">
+                  {editingUser ? 'Update User' : 'Create User'}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell className="font-medium">{user.name}</TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{user.role.replace('_', ' ')}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={user.isActive ? 'default' : 'secondary'}>
-                    {user.isActive ? 'Active' : 'Inactive'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(user)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+        <Card className="bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Users</p>
+                <p className="text-2xl font-bold text-primary">{roleStats.total}</p>
+              </div>
+              <Users className="h-8 w-8 text-primary/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">System Admins</p>
+                <p className="text-2xl font-bold text-purple-600">{roleStats.systemAdmin}</p>
+              </div>
+              <Star className="h-8 w-8 text-purple-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Owners</p>
+                <p className="text-2xl font-bold text-amber-600">{roleStats.owner}</p>
+              </div>
+              <Crown className="h-8 w-8 text-amber-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Property Admins</p>
+                <p className="text-2xl font-bold text-green-600">{roleStats.propertyAdmin}</p>
+              </div>
+              <Building2 className="h-8 w-8 text-green-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border-blue-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Accountants</p>
+                <p className="text-2xl font-bold text-blue-600">{roleStats.accountant}</p>
+              </div>
+              <DollarSign className="h-8 w-8 text-blue-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Active</p>
+                <p className="text-2xl font-bold text-emerald-600">{roleStats.active}</p>
+              </div>
+              <Check className="h-8 w-8 text-emerald-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters & Search */}
+      <Card className="border-border/50">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Input
+                placeholder="Search by name, email, or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+              <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Filter by role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="SYSTEM_ADMIN">System Admin</SelectItem>
+                <SelectItem value="OWNER">Owner</SelectItem>
+                <SelectItem value="PROPERTY_ADMIN">Property Admin</SelectItem>
+                <SelectItem value="ACCOUNTANT">Accountant</SelectItem>
+                <SelectItem value="TENANT">Tenant</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={viewMode === 'grid' ? 'bg-primary text-primary-foreground' : ''}
+              >
+                <Building2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={viewMode === 'table' ? 'bg-primary text-primary-foreground' : ''}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
       </Card>
+
+      {/* Users Display */}
+      {viewMode === 'grid' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredUsers.map((user) => (
+            <Card key={user.id} className={`group hover:shadow-lg transition-all duration-300 border-border/50 ${!user.isActive ? 'opacity-60' : ''}`}>
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <Avatar className={`h-12 w-12 border-2 ${user.isActive ? 'border-primary/20' : 'border-gray-300'}`}>
+                      <AvatarFallback className={`text-sm font-bold ${user.isActive ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-500'}`}>
+                        {getInitials(user.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">
+                        {user.name}
+                        {!user.isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                    </div>
+                  </div>
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(user)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-500" onClick={() => handleToggleStatus(user)}>
+                      {user.isActive ? <XCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" onClick={() => openDelete(user)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  {getRoleBadge(user.role)}
+                  {user.phone && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {user.phone}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground">
+                  Created {new Date(user.createdAt).toLocaleDateString()}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {filteredUsers.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No users found matching your criteria</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <Card className="border-border/50">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>User</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredUsers.map((user) => (
+                <TableRow key={user.id} className={!user.isActive ? 'opacity-60' : ''}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className={`text-xs font-bold ${user.isActive ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-500'}`}>
+                          {getInitials(user.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{user.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>{user.phone || '-'}</TableCell>
+                  <TableCell>{getRoleBadge(user.role)}</TableCell>
+                  <TableCell>
+                    <Badge variant={user.isActive ? 'default' : 'secondary'} className={user.isActive ? 'bg-green-500' : ''}>
+                      {user.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {new Date(user.createdAt).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(user)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-500" onClick={() => handleToggleStatus(user)}>
+                        {user.isActive ? <XCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" onClick={() => openDelete(user)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredUsers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12">
+                    <Users className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No users found matching your criteria</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete User
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{deletingUser?.name}</strong>? This action cannot be undone and will remove all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingUser(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete User
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1190,97 +1606,537 @@ function UsersView({ users, setUsers }: { users: User[]; setUsers: React.Dispatc
 // Properties View
 function PropertiesView({ properties, setProperties }: { properties: Property[]; setProperties: React.Dispatch<React.SetStateAction<Property[]>> }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [deletingProperty, setDeletingProperty] = useState<Property | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     city: '',
     region: '',
     description: '',
+    isActive: true,
   });
+
+  // Filter properties
+  const filteredProperties = properties.filter(property => {
+    const matchesSearch = property.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          property.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          property.city.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' ||
+                          (statusFilter === 'active' && property.isActive) ||
+                          (statusFilter === 'inactive' && !property.isActive);
+    return matchesSearch && matchesStatus;
+  });
+
+  // Stats
+  const stats = {
+    total: properties.length,
+    active: properties.filter(p => p.isActive).length,
+    inactive: properties.filter(p => !p.isActive).length,
+    totalUnits: properties.reduce((sum, p) => sum + (p.totalUnits || 0), 0),
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const newProperty = await api<Property>('/properties', {
-        method: 'POST',
-        body: JSON.stringify(formData),
-      });
-      setProperties([...properties, newProperty]);
+      if (editingProperty) {
+        const updated = await api<Property>(`/properties/${editingProperty.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(formData),
+        });
+        setProperties(properties.map(p => p.id === updated.id ? updated : p));
+        toast({ title: 'Success', description: 'Property updated successfully' });
+      } else {
+        const newProperty = await api<Property>('/properties', {
+          method: 'POST',
+          body: JSON.stringify(formData),
+        });
+        setProperties([...properties, newProperty]);
+        toast({ title: 'Success', description: 'Property created successfully' });
+      }
       setIsDialogOpen(false);
-      setFormData({ name: '', address: '', city: '', region: '', description: '' });
+      resetForm();
     } catch (err) {
-      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create property', variant: 'destructive' });
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to save property', variant: 'destructive' });
     }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingProperty) return;
+    try {
+      await api(`/properties/${deletingProperty.id}`, { method: 'DELETE' });
+      setProperties(properties.filter(p => p.id !== deletingProperty.id));
+      toast({ title: 'Success', description: 'Property deleted successfully' });
+      setIsDeleteDialogOpen(false);
+      setDeletingProperty(null);
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to delete property', variant: 'destructive' });
+    }
+  };
+
+  const handleToggleStatus = async (property: Property) => {
+    try {
+      const updated = await api<Property>(`/properties/${property.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive: !property.isActive }),
+      });
+      setProperties(properties.map(p => p.id === updated.id ? updated : p));
+      toast({ title: 'Success', description: `Property ${!property.isActive ? 'activated' : 'deactivated'}` });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update property', variant: 'destructive' });
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({ name: '', address: '', city: '', region: '', description: '', isActive: true });
+    setEditingProperty(null);
+  };
+
+  const openEdit = (property: Property) => {
+    setFormData({
+      name: property.name,
+      address: property.address,
+      city: property.city,
+      region: property.region,
+      description: property.description || '',
+      isActive: property.isActive,
+    });
+    setEditingProperty(property);
+    setIsDialogOpen(true);
+  };
+
+  const openDelete = (property: Property) => {
+    setDeletingProperty(property);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const openDetail = (property: Property) => {
+    setSelectedProperty(property);
+    setIsDetailDialogOpen(true);
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Properties</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">Property Management</h1>
+          <p className="text-muted-foreground mt-1">Manage your properties and buildings</p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Add Property</Button>
+            <Button className="bg-gradient-to-r from-primary to-emerald-500 hover:from-primary/90 hover:to-emerald-500/90 shadow-lg shadow-primary/20">
+              <Plus className="mr-2 h-4 w-4" /> Add Property
+            </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Add New Property</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                {editingProperty ? <Edit className="h-5 w-5 text-primary" /> : <Building2 className="h-5 w-5 text-primary" />}
+                {editingProperty ? 'Edit Property' : 'Add New Property'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingProperty ? 'Update property information' : 'Add a new property to your portfolio'}
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label>Property Name</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                <Label htmlFor="propName" className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  Property Name
+                </Label>
+                <Input
+                  id="propName"
+                  placeholder="Sunset Apartments"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
               </div>
               <div className="space-y-2">
-                <Label>Address</Label>
-                <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} required />
+                <Label htmlFor="propAddress" className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  Address
+                </Label>
+                <Input
+                  id="propAddress"
+                  placeholder="123 Main Street"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  required
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>City</Label>
-                  <Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} required />
+                  <Label htmlFor="propCity">City</Label>
+                  <Input
+                    id="propCity"
+                    placeholder="Addis Ababa"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Region</Label>
-                  <Input value={formData.region} onChange={(e) => setFormData({ ...formData, region: e.target.value })} required />
+                  <Label htmlFor="propRegion">Region</Label>
+                  <Input
+                    id="propRegion"
+                    placeholder="Addis Ababa"
+                    value={formData.region}
+                    onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                    required
+                  />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Description</Label>
-                <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+                <Label htmlFor="propDesc">Description</Label>
+                <Textarea
+                  id="propDesc"
+                  placeholder="Describe your property..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                />
               </div>
-              <DialogFooter>
-                <Button type="submit">Create Property</Button>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="propActive"
+                    checked={formData.isActive}
+                    onCheckedChange={(v) => setFormData({ ...formData, isActive: v })}
+                  />
+                  <Label htmlFor="propActive" className="cursor-pointer">Active Property</Label>
+                </div>
+                <Badge variant={formData.isActive ? 'default' : 'secondary'} className={formData.isActive ? 'bg-green-500' : ''}>
+                  {formData.isActive ? 'Active' : 'Inactive'}
+                </Badge>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500">
+                  {editingProperty ? 'Update Property' : 'Create Property'}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {properties.map((property) => (
-          <Card key={property.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                {property.name}
-              </CardTitle>
-              <CardDescription>{property.city}, {property.region}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <MapPin className="h-4 w-4" />
-                  {property.address}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Properties</p>
+                <p className="text-2xl font-bold text-primary">{stats.total}</p>
+              </div>
+              <Building2 className="h-8 w-8 text-primary/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Active</p>
+                <p className="text-2xl font-bold text-green-600">{stats.active}</p>
+              </div>
+              <Check className="h-8 w-8 text-green-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Inactive</p>
+                <p className="text-2xl font-bold text-amber-600">{stats.inactive}</p>
+              </div>
+              <XCircle className="h-8 w-8 text-amber-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border-blue-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Units</p>
+                <p className="text-2xl font-bold text-blue-600">{stats.totalUnits}</p>
+              </div>
+              <DoorOpen className="h-8 w-8 text-blue-500/30" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters & Search */}
+      <Card className="border-border/50">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Input
+                placeholder="Search by name, address, or city..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={viewMode === 'grid' ? 'bg-primary text-primary-foreground' : ''}
+              >
+                <Building2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={viewMode === 'table' ? 'bg-primary text-primary-foreground' : ''}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Properties Display */}
+      {viewMode === 'grid' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredProperties.map((property) => (
+            <Card 
+              key={property.id} 
+              className={`group hover:shadow-lg transition-all duration-300 border-border/50 cursor-pointer ${!property.isActive ? 'opacity-60' : ''}`}
+              onClick={() => openDetail(property)}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${property.isActive ? 'bg-primary/10' : 'bg-gray-100'}`}>
+                      <Building2 className={`h-6 w-6 ${property.isActive ? 'text-primary' : 'text-gray-400'}`} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">
+                        {property.name}
+                        {!property.isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">{property.city}, {property.region}</p>
+                    </div>
+                  </div>
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(property)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-500" onClick={() => handleToggleStatus(property)}>
+                      {property.isActive ? <XCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" onClick={() => openDelete(property)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <DoorOpen className="h-4 w-4" />
-                  {property.totalUnits} units
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <MapPin className="h-4 w-4" />
+                    <span className="truncate">{property.address}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <DoorOpen className="h-4 w-4 text-primary" />
+                    <span>{property.totalUnits || 0} units</span>
+                  </div>
+                </div>
+                {property.description && (
+                  <p className="mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground line-clamp-2">
+                    {property.description}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+          {filteredProperties.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <Building2 className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No properties found matching your criteria</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <Card className="border-border/50">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Property</TableHead>
+                <TableHead>Address</TableHead>
+                <TableHead>City</TableHead>
+                <TableHead>Region</TableHead>
+                <TableHead>Units</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredProperties.map((property) => (
+                <TableRow 
+                  key={property.id} 
+                  className={!property.isActive ? 'opacity-60 cursor-pointer' : 'cursor-pointer'}
+                  onClick={() => openDetail(property)}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-1.5 rounded ${property.isActive ? 'bg-primary/10' : 'bg-gray-100'}`}>
+                        <Building2 className={`h-4 w-4 ${property.isActive ? 'text-primary' : 'text-gray-400'}`} />
+                      </div>
+                      <span className="font-medium">{property.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{property.address}</TableCell>
+                  <TableCell>{property.city}</TableCell>
+                  <TableCell>{property.region}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="border-primary/20 text-primary">
+                      {property.totalUnits || 0} units
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={property.isActive ? 'default' : 'secondary'} className={property.isActive ? 'bg-green-500' : ''}>
+                      {property.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(property)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-500" onClick={() => handleToggleStatus(property)}>
+                        {property.isActive ? <XCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" onClick={() => openDelete(property)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredProperties.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12">
+                    <Building2 className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No properties found matching your criteria</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Property
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{deletingProperty?.name}</strong>? This will also delete all units and assignments. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingProperty(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete Property
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Property Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              {selectedProperty?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Property details and overview
+            </DialogDescription>
+          </DialogHeader>
+          {selectedProperty && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <MapPin className="h-4 w-4" />
+                    Address
+                  </div>
+                  <p className="font-medium">{selectedProperty.address}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <Building className="h-4 w-4" />
+                    City & Region
+                  </div>
+                  <p className="font-medium">{selectedProperty.city}, {selectedProperty.region}</p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 text-center">
+                  <p className="text-2xl font-bold text-primary">{selectedProperty.totalUnits || 0}</p>
+                  <p className="text-xs text-muted-foreground">Total Units</p>
+                </div>
+                <div className="p-4 rounded-lg bg-green-500/5 border border-green-500/20 text-center">
+                  <Badge variant="default" className={selectedProperty.isActive ? 'bg-green-500' : 'bg-gray-400'}>
+                    {selectedProperty.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                  <p className="text-xs text-muted-foreground mt-2">Status</p>
+                </div>
+                <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/20 text-center">
+                  <p className="text-sm font-medium">{new Date(selectedProperty.createdAt).toLocaleDateString()}</p>
+                  <p className="text-xs text-muted-foreground">Created</p>
+                </div>
+              </div>
+              {selectedProperty.description && (
+                <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
+                  <p className="text-sm text-muted-foreground mb-1">Description</p>
+                  <p className="text-sm">{selectedProperty.description}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>
+                  Close
+                </Button>
+                <Button onClick={() => { setIsDetailDialogOpen(false); openEdit(selectedProperty); }}>
+                  <Edit className="h-4 w-4 mr-2" /> Edit Property
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1293,22 +2149,104 @@ function AssignmentsView({ assignments, setAssignments, users, properties }: {
   properties: Property[];
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({ userId: '', propertyId: '' });
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [assignmentMode, setAssignmentMode] = useState<'user-to-properties' | 'properties-to-user' | 'single'>('single');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'cards' | 'matrix' | 'table'>('cards');
+  const [filterRole, setFilterRole] = useState<string>('all');
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    userId: '',
+    propertyId: '',
+    propertyIds: [] as string[],
+    userIds: [] as string[],
+  });
 
-  const eligibleUsers = users.filter(u => ['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(u.role));
+  const eligibleUsers = users.filter(u => ['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(u.role) && u.isActive);
+  const activeProperties = properties.filter(p => p.isActive);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Group assignments by user and property for visualization
+  const assignmentsByUser = eligibleUsers.map(user => ({
+    user,
+    properties: assignments
+      .filter(a => a.userId === user.id)
+      .map(a => a.property)
+      .filter(Boolean),
+  }));
+
+  const assignmentsByProperty = activeProperties.map(property => ({
+    property,
+    users: assignments
+      .filter(a => a.propertyId === property.id)
+      .map(a => a.user)
+      .filter(Boolean),
+  }));
+
+  // Filter assignments
+  const filteredAssignments = assignments.filter(assignment => {
+    const matchesSearch = 
+      assignment.user?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      assignment.property?.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesRole = filterRole === 'all' || assignment.user?.role === filterRole;
+    return matchesSearch && matchesRole;
+  });
+
+  // Stats with more details
+  const stats = {
+    total: assignments.length,
+    propertyAdmins: assignments.filter(a => a.user?.role === 'PROPERTY_ADMIN').length,
+    accountants: assignments.filter(a => a.user?.role === 'ACCOUNTANT').length,
+    usersWithAssignments: new Set(assignments.map(a => a.userId)).size,
+    propertiesWithAssignments: new Set(assignments.map(a => a.propertyId)).size,
+    unassignedUsers: eligibleUsers.length - new Set(assignments.map(a => a.userId)).size,
+    unassignedProperties: activeProperties.length - new Set(assignments.map(a => a.propertyId)).size,
+  };
+
+  // Assignment patterns analysis
+  const multiPropertyUsers = assignmentsByUser.filter(a => a.properties.length > 1).length;
+  const multiUserProperties = assignmentsByProperty.filter(p => p.users.length > 1).length;
+
+  const handleSingleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const newAssignment = await api<PropertyAssignment>('/assignments', {
         method: 'POST',
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ userId: formData.userId, propertyId: formData.propertyId }),
       });
       setAssignments([...assignments, newAssignment]);
       setIsDialogOpen(false);
-      setFormData({ userId: '', propertyId: '' });
+      resetForm();
+      toast({ title: 'Success', description: 'Assignment created successfully' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create assignment', variant: 'destructive' });
+    }
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let body: Record<string, unknown> = {};
+      
+      if (assignmentMode === 'user-to-properties') {
+        body = { userId: formData.userId, propertyIds: formData.propertyIds };
+      } else if (assignmentMode === 'properties-to-user') {
+        body = { propertyId: formData.propertyId, userIds: formData.userIds };
+      }
+
+      const result = await api<{ success: boolean; count: number; message: string }>('/assignments', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+
+      // Refresh assignments
+      const updated = await api<PropertyAssignment[]>('/assignments');
+      setAssignments(updated);
+      setIsBulkDialogOpen(false);
+      resetForm();
+      toast({ title: 'Success', description: result.message || `Created ${result.count} assignment(s)` });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create assignments', variant: 'destructive' });
     }
   };
 
@@ -1316,96 +2254,735 @@ function AssignmentsView({ assignments, setAssignments, users, properties }: {
     try {
       await api(`/assignments?id=${id}`, { method: 'DELETE' });
       setAssignments(assignments.filter(a => a.id !== id));
+      toast({ title: 'Success', description: 'Assignment removed' });
     } catch (err) {
       toast({ title: 'Error', description: 'Failed to delete assignment', variant: 'destructive' });
     }
   };
 
+  const handleDeleteAllForUser = async (userId: string) => {
+    try {
+      await api(`/assignments?userId=${userId}`, { method: 'DELETE' });
+      setAssignments(assignments.filter(a => a.userId !== userId));
+      toast({ title: 'Success', description: 'All assignments removed for user' });
+    } catch (err) {
+      toast({ title: 'Error', description: 'Failed to delete assignments', variant: 'destructive' });
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      userId: '',
+      propertyId: '',
+      propertyIds: [],
+      userIds: [],
+    });
+  };
+
+  const getRoleBadge = (role: string) => {
+    const styles: Record<string, string> = {
+      PROPERTY_ADMIN: 'bg-green-100 text-green-700',
+      ACCOUNTANT: 'bg-blue-100 text-blue-700',
+    };
+    return (
+      <Badge className={`${styles[role] || 'bg-gray-100 text-gray-700'} border-0`}>
+        {role.replace('_', ' ')}
+      </Badge>
+    );
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Property Assignments</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> New Assignment</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Assign Property</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>User</Label>
-                <Select value={formData.userId} onValueChange={(v) => setFormData({ ...formData, userId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                  <SelectContent>
-                    {eligibleUsers.map(u => (
-                      <SelectItem key={u.id} value={u.id}>{u.name} ({u.role})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Property</Label>
-                <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select property" /></SelectTrigger>
-                  <SelectContent>
-                    {properties.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <DialogFooter>
-                <Button type="submit">Create Assignment</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+      {/* Header with gradient */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-emerald-500/5 to-teal-500/5 p-6 border border-primary/10">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary via-emerald-500 to-teal-500 bg-clip-text text-transparent">Property Assignments</h1>
+            <p className="text-muted-foreground mt-1">Manage user-property relationships with flexible assignment patterns</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Dialog open={isBulkDialogOpen} onOpenChange={(open) => { setIsBulkDialogOpen(open); if (!open) resetForm(); }}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/5 shadow-sm">
+                  <ArrowRightLeft className="mr-2 h-4 w-4" /> Bulk Assign
+                </Button>
+              </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <ArrowRightLeft className="h-5 w-5 text-primary" />
+                  Bulk Property Assignment
+                </DialogTitle>
+                <DialogDescription>
+                  Assign multiple properties to a user or multiple users to a property
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleBulkSubmit} className="space-y-4">
+                {/* Assignment Mode Selection */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
+                  <Button
+                    type="button"
+                    variant={assignmentMode === 'user-to-properties' ? 'default' : 'ghost'}
+                    className={assignmentMode === 'user-to-properties' ? 'bg-primary text-primary-foreground' : ''}
+                    onClick={() => setAssignmentMode('user-to-properties')}
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    1 User → Many Properties
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={assignmentMode === 'properties-to-user' ? 'default' : 'ghost'}
+                    className={assignmentMode === 'properties-to-user' ? 'bg-primary text-primary-foreground' : ''}
+                    onClick={() => setAssignmentMode('properties-to-user')}
+                  >
+                    <Building2 className="h-4 w-4 mr-2" />
+                    1 Property → Many Users
+                  </Button>
+                </div>
+
+                {assignmentMode === 'user-to-properties' ? (
+                  <>
+                    {/* One User to Many Properties */}
+                    <div className="space-y-2">
+                      <Label>Select User</Label>
+                      <Select value={formData.userId} onValueChange={(v) => setFormData({ ...formData, userId: v })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a user" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {eligibleUsers.map(u => (
+                            <SelectItem key={u.id} value={u.id}>
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarFallback className="text-xs">{u.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <span>{u.name}</span>
+                                <Badge variant="outline" className="text-xs">{u.role.replace('_', ' ')}</Badge>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Select Properties ({formData.propertyIds.length} selected)</Label>
+                      <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                        {activeProperties.map(p => {
+                          const userAssignments = assignments.filter(a => a.userId === formData.userId && a.propertyId === p.id);
+                          const alreadyAssigned = userAssignments.length > 0;
+                          return (
+                            <label key={p.id} className={`flex items-center gap-2 p-2 rounded ${alreadyAssigned ? 'opacity-50' : 'hover:bg-muted cursor-pointer'}`}>
+                              <input
+                                type="checkbox"
+                                checked={formData.propertyIds.includes(p.id) || alreadyAssigned}
+                                disabled={alreadyAssigned}
+                                onChange={(e) => {
+                                  if (alreadyAssigned) return;
+                                  if (e.target.checked) {
+                                    setFormData({ ...formData, propertyIds: [...formData.propertyIds, p.id] });
+                                  } else {
+                                    setFormData({ ...formData, propertyIds: formData.propertyIds.filter(id => id !== p.id) });
+                                  }
+                                }}
+                                className="rounded"
+                              />
+                              <Building2 className="h-4 w-4 text-primary" />
+                              <span className="text-sm">{p.name}</span>
+                              {alreadyAssigned && <Badge variant="secondary" className="text-xs">Already assigned</Badge>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Many Users to One Property */}
+                    <div className="space-y-2">
+                      <Label>Select Property</Label>
+                      <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a property" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeProperties.map(p => (
+                            <SelectItem key={p.id} value={p.id}>
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-4 w-4 text-primary" />
+                                <span>{p.name}</span>
+                                <span className="text-xs text-muted-foreground">({p.city})</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Select Users ({formData.userIds.length} selected)</Label>
+                      <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                        {eligibleUsers.map(u => {
+                          const alreadyAssigned = assignments.some(a => a.userId === u.id && a.propertyId === formData.propertyId);
+                          return (
+                            <label key={u.id} className={`flex items-center gap-2 p-2 rounded ${alreadyAssigned ? 'opacity-50' : 'hover:bg-muted cursor-pointer'}`}>
+                              <input
+                                type="checkbox"
+                                checked={formData.userIds.includes(u.id) || alreadyAssigned}
+                                disabled={alreadyAssigned}
+                                onChange={(e) => {
+                                  if (alreadyAssigned) return;
+                                  if (e.target.checked) {
+                                    setFormData({ ...formData, userIds: [...formData.userIds, u.id] });
+                                  } else {
+                                    setFormData({ ...formData, userIds: formData.userIds.filter(id => id !== u.id) });
+                                  }
+                                }}
+                                className="rounded"
+                              />
+                              <Avatar className="h-6 w-6">
+                                <AvatarFallback className="text-xs">{u.name.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              <span className="text-sm">{u.name}</span>
+                              {getRoleBadge(u.role)}
+                              {alreadyAssigned && <Badge variant="secondary" className="text-xs ml-auto">Already assigned</Badge>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <DialogFooter className="gap-2">
+                  <Button type="button" variant="outline" onClick={() => { setIsBulkDialogOpen(false); resetForm(); }}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500">
+                    Create Assignments
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+          
+          <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-primary to-emerald-500 hover:from-primary/90 hover:to-emerald-500/90 shadow-lg shadow-primary/20">
+                <Plus className="mr-2 h-4 w-4" /> Quick Assign
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-primary" />
+                  Quick Assignment
+                </DialogTitle>
+                <DialogDescription>
+                  Assign one user to one property
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSingleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>User</Label>
+                  <Select value={formData.userId} onValueChange={(v) => setFormData({ ...formData, userId: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
+                    <SelectContent>
+                      {eligibleUsers.map(u => (
+                        <SelectItem key={u.id} value={u.id}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="text-xs">{u.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            {u.name}
+                            <Badge variant="outline" className="text-xs">{u.role.replace('_', ' ')}</Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Property</Label>
+                  <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select property" /></SelectTrigger>
+                    <SelectContent>
+                      {activeProperties.map(p => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-primary" />
+                            {p.name}
+                            <span className="text-xs text-muted-foreground">({p.city})</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500">
+                    Create Assignment
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+        </div>
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Property</TableHead>
-              <TableHead>Assigned At</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {assignments.map((assignment) => (
-              <TableRow key={assignment.id}>
-                <TableCell>{assignment.user?.name}</TableCell>
-                <TableCell><Badge variant="outline">{assignment.user?.role}</Badge></TableCell>
-                <TableCell>{assignment.property?.name}</TableCell>
-                <TableCell>{new Date(assignment.assignedAt).toLocaleDateString()}</TableCell>
-                <TableCell>
+      {/* Stats Cards - Modern Design */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <Card className="group bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                  <ArrowRightLeft className="h-4 w-4 text-primary" />
+                </div>
+                <Badge variant="outline" className="text-xs border-primary/20 text-primary bg-primary/5">
+                  {multiPropertyUsers + multiUserProperties} multi
+                </Badge>
+              </div>
+              <p className="text-2xl font-bold text-primary mt-2">{stats.total}</p>
+              <p className="text-xs text-muted-foreground">Total Assignments</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="p-2 rounded-lg bg-green-500/10 group-hover:bg-green-500/20 transition-colors w-fit">
+                <Building2 className="h-4 w-4 text-green-600" />
+              </div>
+              <p className="text-2xl font-bold text-green-600 mt-2">{stats.propertyAdmins}</p>
+              <p className="text-xs text-muted-foreground">Property Admins</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-teal-500/10 to-teal-500/5 border-teal-500/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors w-fit">
+                <DollarSign className="h-4 w-4 text-teal-600" />
+              </div>
+              <p className="text-2xl font-bold text-teal-600 mt-2">{stats.accountants}</p>
+              <p className="text-xs text-muted-foreground">Accountants</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-purple-500/10 group-hover:bg-purple-500/20 transition-colors">
+                  <Users className="h-4 w-4 text-purple-600" />
+                </div>
+                {stats.unassignedUsers > 0 && (
+                  <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-600 bg-amber-50">
+                    {stats.unassignedUsers} free
+                  </Badge>
+                )}
+              </div>
+              <p className="text-2xl font-bold text-purple-600 mt-2">{stats.usersWithAssignments}</p>
+              <p className="text-xs text-muted-foreground">Users Assigned</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
+                  <Building className="h-4 w-4 text-amber-600" />
+                </div>
+                {stats.unassignedProperties > 0 && (
+                  <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-600 bg-amber-50">
+                    {stats.unassignedProperties} free
+                  </Badge>
+                )}
+              </div>
+              <p className="text-2xl font-bold text-amber-600 mt-2">{stats.propertiesWithAssignments}</p>
+              <p className="text-xs text-muted-foreground">Properties Covered</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-rose-500/10 to-rose-500/5 border-rose-500/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="p-2 rounded-lg bg-rose-500/10 group-hover:bg-rose-500/20 transition-colors w-fit">
+                <UserCheck className="h-4 w-4 text-rose-600" />
+              </div>
+              <p className="text-2xl font-bold text-rose-600 mt-2">{multiPropertyUsers}</p>
+              <p className="text-xs text-muted-foreground">Multi-Property Users</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border-cyan-500/20 hover:shadow-lg transition-all duration-300">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-1">
+              <div className="p-2 rounded-lg bg-cyan-500/10 group-hover:bg-cyan-500/20 transition-colors w-fit">
+                <Star className="h-4 w-4 text-cyan-600" />
+              </div>
+              <p className="text-2xl font-bold text-cyan-600 mt-2">{multiUserProperties}</p>
+              <p className="text-xs text-muted-foreground">Multi-User Properties</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters & View Toggle */}
+      <Card className="border-border/50 shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Input
+                placeholder="Search by user or property name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 border-primary/20 focus:border-primary"
+              />
+              <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
+            <Select value={filterRole} onValueChange={setFilterRole}>
+              <SelectTrigger className="w-full sm:w-44 border-primary/20">
+                <SelectValue placeholder="Filter by role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="PROPERTY_ADMIN">Property Admin</SelectItem>
+                <SelectItem value="ACCOUNTANT">Accountant</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={viewMode === 'cards' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('cards')}
+                className={viewMode === 'cards' ? 'bg-primary text-primary-foreground shadow-sm' : ''}
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'matrix' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('matrix')}
+                className={viewMode === 'matrix' ? 'bg-primary text-primary-foreground shadow-sm' : ''}
+              >
+                <Target className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={viewMode === 'table' ? 'bg-primary text-primary-foreground shadow-sm' : ''}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick Assignment Hints */}
+      {assignments.length === 0 && (
+        <Card className="border-dashed border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-emerald-500/5">
+          <CardContent className="p-8">
+            <div className="text-center space-y-4">
+              <div className="flex justify-center gap-3">
+                <div className="p-3 rounded-full bg-primary/10">
+                  <ArrowRightLeft className="h-8 w-8 text-primary" />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold mb-2">No Assignments Yet</h3>
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  Start by assigning users to properties. You can create:
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-3 mt-4">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <UserCheck className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium">1 User → 1 Property</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                  <Users className="h-4 w-4 text-teal-600" />
+                  <span className="text-sm font-medium">1 User → Many Properties</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                  <Building2 className="h-4 w-4 text-purple-600" />
+                  <span className="text-sm font-medium">Many Users → 1 Property</span>
+                </div>
+              </div>
+              <Button className="mt-4 bg-gradient-to-r from-primary to-emerald-500 shadow-lg shadow-primary/20" onClick={() => setIsDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Create First Assignment
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* View Display */}
+      {viewMode === 'cards' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {assignmentsByUser.filter(item => item.properties.length > 0).map(({ user, properties: userProperties }) => (
+            <Card key={user.id} className="group hover:shadow-xl transition-all duration-300 border-border/50 bg-gradient-to-br from-card to-muted/20 overflow-hidden">
+              {/* Card Header with user info */}
+              <div className="p-5 pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <Avatar className="h-12 w-12 border-2 border-primary/20 shadow-sm">
+                        <AvatarFallback className="bg-gradient-to-br from-primary/20 to-emerald-500/20 text-primary font-bold text-lg">{user.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      {userProperties.length > 1 && (
+                        <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-medium shadow-sm">
+                          {userProperties.length}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-lg">{user.name}</h3>
+                      {getRoleBadge(user.role)}
+                    </div>
+                  </div>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Remove Assignment?</AlertDialogTitle>
+                        <AlertDialogTitle>Remove All Assignments?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will remove the property assignment from this user.
+                          This will remove all {userProperties.length} property assignment(s) for {user.name}.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => handleDelete(assignment.id)}>Remove</AlertDialogAction>
+                        <AlertDialogAction onClick={() => handleDeleteAllForUser(user.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                          Remove All
+                        </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </TableCell>
+                </div>
+              </div>
+              
+              {/* Properties List */}
+              <div className="px-5 pb-5">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-muted-foreground font-medium">Assigned Properties</p>
+                  <Badge variant="outline" className="text-xs border-primary/20 text-primary">
+                    {userProperties.length} {userProperties.length === 1 ? 'property' : 'properties'}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {userProperties.slice(0, 3).map(prop => (
+                    <div key={prop?.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors group/item">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded bg-primary/10">
+                          <Building2 className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                        <span className="text-sm font-medium">{prop?.name}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover/item:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                        onClick={() => {
+                          const assignment = assignments.find(a => a.userId === user.id && a.propertyId === prop?.id);
+                          if (assignment) handleDelete(assignment.id);
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  {userProperties.length > 3 && (
+                    <div className="text-center py-2">
+                      <Badge variant="secondary" className="text-xs">
+                        +{userProperties.length - 3} more properties
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
+          {assignmentsByUser.filter(item => item.properties.length > 0).length === 0 && assignments.length > 0 && (
+            <div className="col-span-full text-center py-12">
+              <ArrowRightLeft className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No assignments found matching your criteria</p>
+            </div>
+          )}
+        </div>
+      ) : viewMode === 'matrix' ? (
+        <Card className="border-border/50 overflow-hidden">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="p-3 text-left text-sm font-medium sticky left-0 bg-muted/50 z-10 min-w-32">
+                      <Users className="h-4 w-4 inline mr-2 text-muted-foreground" />
+                      Users
+                    </th>
+                    {activeProperties.slice(0, 8).map(prop => (
+                      <th key={prop.id} className="p-3 text-center text-sm font-medium min-w-24">
+                        <div className="flex flex-col items-center gap-1">
+                          <Building2 className="h-4 w-4 text-primary" />
+                          <span className="truncate max-w-20" title={prop.name}>{prop.name}</span>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {eligibleUsers.slice(0, 10).map(user => (
+                    <tr key={user.id} className="border-t border-border/50 hover:bg-muted/30">
+                      <td className="p-3 sticky left-0 bg-background z-10">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="text-xs">{user.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-sm font-medium">{user.name}</p>
+                            <Badge variant="outline" className="text-xs">{user.role.replace('_', ' ')}</Badge>
+                          </div>
+                        </div>
+                      </td>
+                      {activeProperties.slice(0, 8).map(prop => {
+                        const assignment = assignments.find(a => a.userId === user.id && a.propertyId === prop.id);
+                        return (
+                          <td key={prop.id} className="p-3 text-center">
+                            {assignment ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 rounded-full bg-green-500/10 hover:bg-red-500/20 group"
+                                onClick={() => handleDelete(assignment.id)}
+                              >
+                                <Check className="h-4 w-4 text-green-500 group-hover:hidden" />
+                                <X className="h-4 w-4 text-red-500 hidden group-hover:block" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 rounded-full hover:bg-primary/10"
+                                onClick={async () => {
+                                  try {
+                                    await api('/assignments', {
+                                      method: 'POST',
+                                      body: JSON.stringify({ userId: user.id, propertyId: prop.id }),
+                                    });
+                                    const updated = await api<PropertyAssignment[]>('/assignments');
+                                    setAssignments(updated);
+                                    toast({ title: 'Success', description: 'Assignment created' });
+                                  } catch (err) {
+                                    toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed', variant: 'destructive' });
+                                  }
+                                }}
+                              >
+                                <Plus className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(activeProperties.length > 8 || eligibleUsers.length > 10) && (
+              <div className="p-3 border-t border-border/50 text-center text-sm text-muted-foreground">
+                Showing {Math.min(10, eligibleUsers.length)} of {eligibleUsers.length} users and {Math.min(8, activeProperties.length)} of {activeProperties.length} properties
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-border/50">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>User</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Property</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Assigned At</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredAssignments.map((assignment) => (
+                <TableRow key={assignment.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="text-xs">{assignment.user?.name?.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{assignment.user?.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{getRoleBadge(assignment.user?.role || '')}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-primary" />
+                      {assignment.property?.name}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {assignment.property?.city}, {assignment.property?.region}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {new Date(assignment.assignedAt).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="hover:bg-destructive/10 hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remove Assignment?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will remove {assignment.user?.name} from {assignment.property?.name}.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDelete(assignment.id)}>Remove</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredAssignments.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12">
+                    <ArrowRightLeft className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No assignments found matching your criteria</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }
@@ -2011,6 +3588,7 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
   contracts: Contract[];
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [sendingSmsId, setSendingSmsId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     contractId: '',
     amount: '',
@@ -2018,6 +3596,7 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
     periodStart: '',
     periodEnd: '',
     notes: '',
+    sendSmsNotification: false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2032,14 +3611,49 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
       });
       setInvoices([...invoices, newInvoice]);
       setIsDialogOpen(false);
+      
+      // Send SMS notification if enabled
+      if (formData.sendSmsNotification && newInvoice.id) {
+        try {
+          await api('/sms', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'invoice', invoiceId: newInvoice.id }),
+          });
+          toast({ title: 'Success', description: 'Invoice created and SMS notification sent' });
+        } catch {
+          toast({ title: 'Warning', description: 'Invoice created but SMS failed to send' });
+        }
+      } else {
+        toast({ title: 'Success', description: 'Invoice created' });
+      }
+      
       resetForm();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create invoice', variant: 'destructive' });
     }
   };
 
+  const handleSendSms = async (invoiceId: string) => {
+    setSendingSmsId(invoiceId);
+    try {
+      const result = await api<{ success: boolean; message: string }>('/sms', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'invoice', invoiceId }),
+      });
+      if (result.success) {
+        toast({ title: 'Success', description: 'SMS notification sent' });
+      } else {
+        toast({ title: 'Failed', description: result.message, variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to send SMS', variant: 'destructive' });
+    } finally {
+      setSendingSmsId(null);
+    }
+  };
+
   const resetForm = () => {
-    setFormData({ contractId: '', amount: '', dueDate: '', periodStart: '', periodEnd: '', notes: '' });
+    setFormData({ contractId: '', amount: '', dueDate: '', periodStart: '', periodEnd: '', notes: '', sendSmsNotification: false });
   };
 
   const getStatusBadge = (status: string) => {
@@ -2103,6 +3717,17 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
                 <Label>Notes</Label>
                 <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
               </div>
+              <div className="flex items-center gap-2 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                <Switch
+                  id="sendSms"
+                  checked={formData.sendSmsNotification}
+                  onCheckedChange={(v) => setFormData({ ...formData, sendSmsNotification: v })}
+                />
+                <Label htmlFor="sendSms" className="flex items-center gap-2 cursor-pointer">
+                  <MessageSquare className="h-4 w-4 text-primary" />
+                  Send SMS notification to tenant
+                </Label>
+              </div>
               <DialogFooter>
                 <Button type="submit">Create Invoice</Button>
               </DialogFooter>
@@ -2121,6 +3746,7 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
               <TableHead>Due Date</TableHead>
               <TableHead>Paid</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2132,6 +3758,24 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
                 <TableCell>{new Date(invoice.dueDate).toLocaleDateString()}</TableCell>
                 <TableCell>{invoice.paidAmount.toLocaleString()} ETB</TableCell>
                 <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                <TableCell>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSendSms(invoice.id)}
+                    disabled={sendingSmsId === invoice.id}
+                    className="text-primary hover:bg-primary/10"
+                  >
+                    {sendingSmsId === invoice.id ? (
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    ) : (
+                      <MessageSquare className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -2183,7 +3827,17 @@ function PaymentsView({ payments, setPayments, user }: {
       await api(`/payments/${id}/approve`, { method: 'POST' });
       const updated = await api<Payment[]>('/payments');
       setPayments(updated);
-      toast({ title: 'Success', description: 'Payment approved' });
+      
+      // Send SMS notification for payment confirmation
+      try {
+        await api('/sms', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'payment', paymentId: id }),
+        });
+        toast({ title: 'Success', description: 'Payment approved and SMS sent' });
+      } catch {
+        toast({ title: 'Success', description: 'Payment approved (SMS failed)' });
+      }
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to approve', variant: 'destructive' });
     }
@@ -2462,6 +4116,7 @@ function SettingsView({ settings, setSettings }: {
   settings: SystemSettings | null;
   setSettings: React.Dispatch<React.SetStateAction<SystemSettings | null>>;
 }) {
+  const [activeCategory, setActiveCategory] = useState<string>('notifications');
   const [formData, setFormData] = useState(() => ({
     tenantSelfServiceEnabled: settings?.tenantSelfServiceEnabled ?? false,
     smsNotificationEnabled: settings?.smsNotificationEnabled ?? false,
@@ -2472,6 +4127,50 @@ function SettingsView({ settings, setSettings }: {
     latePaymentPenaltyPercent: settings?.latePaymentPenaltyPercent ?? 5,
   }));
 
+  // SMS Settings state
+  const [smsSettings, setSmsSettings] = useState({
+    smsApiKey: '',
+    smsSenderId: '',
+    smsBaseUrl: 'https://smsethiopia.et/api/',
+    hasApiKey: false,
+  });
+  const [testPhone, setTestPhone] = useState('');
+  const [isTestLoading, setIsTestLoading] = useState(false);
+  const [isSmsLoading, setIsSmsLoading] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    sms: true,
+    notifications: true,
+    payments: false,
+    portal: false,
+    integrations: false,
+  });
+
+  // Load SMS settings on mount
+  useEffect(() => {
+    loadSmsSettings();
+  }, []);
+
+  const loadSmsSettings = async () => {
+    try {
+      const data = await api<{
+        smsNotificationEnabled: boolean;
+        smsApiKey: string | null;
+        smsSenderId: string | null;
+        smsBaseUrl: string;
+        hasApiKey: boolean;
+      }>('/sms');
+      setSmsSettings({
+        smsApiKey: data.smsApiKey || '',
+        smsSenderId: data.smsSenderId || '',
+        smsBaseUrl: data.smsBaseUrl || 'https://smsethiopia.et/api/',
+        hasApiKey: data.hasApiKey,
+      });
+      setFormData(prev => ({ ...prev, smsNotificationEnabled: data.smsNotificationEnabled }));
+    } catch (err) {
+      console.error('Failed to load SMS settings:', err);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -2480,112 +4179,468 @@ function SettingsView({ settings, setSettings }: {
         body: JSON.stringify(formData),
       });
       setSettings(updated);
-      toast({ title: 'Success', description: 'Settings updated' });
+      toast({ title: 'Success', description: 'Settings updated successfully' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update settings', variant: 'destructive' });
     }
   };
 
+  const handleSmsSettingsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSmsLoading(true);
+    try {
+      const updated = await api<SystemSettings>('/sms/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          smsApiKey: smsSettings.smsApiKey,
+          smsSenderId: smsSettings.smsSenderId,
+          smsBaseUrl: smsSettings.smsBaseUrl,
+          smsNotificationEnabled: formData.smsNotificationEnabled,
+        }),
+      });
+      setSmsSettings(prev => ({ ...prev, hasApiKey: true }));
+      toast({ title: 'Success', description: 'SMS settings saved successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to save SMS settings', variant: 'destructive' });
+    } finally {
+      setIsSmsLoading(false);
+    }
+  };
+
+  const handleTestSms = async () => {
+    if (!testPhone) {
+      toast({ title: 'Error', description: 'Please enter a phone number', variant: 'destructive' });
+      return;
+    }
+    setIsTestLoading(true);
+    try {
+      const result = await api<{ success: boolean; message: string }>('/sms', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'test', phone: testPhone }),
+      });
+      if (result.success) {
+        toast({ title: 'Success', description: 'Test SMS sent successfully!' });
+      } else {
+        toast({ title: 'Failed', description: result.message, variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to send test SMS', variant: 'destructive' });
+    } finally {
+      setIsTestLoading(false);
+    }
+  };
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Settings categories configuration
+  const settingCategories = [
+    { id: 'notifications', label: 'Notifications', icon: Bell, color: 'primary' },
+    { id: 'sms', label: 'SMS Settings', icon: MessageSquare, color: 'emerald' },
+    { id: 'payments', label: 'Payments', icon: Wallet, color: 'amber' },
+    { id: 'portal', label: 'Portal', icon: Building2, color: 'teal' },
+    { id: 'integrations', label: 'Integrations', icon: Zap, color: 'purple' },
+  ];
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">System Settings</h1>
+      {/* Header with gradient */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-emerald-500/5 to-teal-500/5 p-6 border border-primary/10">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary via-emerald-500 to-teal-500 bg-clip-text text-transparent">System Settings</h1>
+            <p className="text-muted-foreground mt-1">Configure your property management system</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {smsSettings.hasApiKey && (
+              <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
+                <Check className="h-3 w-3 mr-1" /> SMS Configured
+              </Badge>
+            )}
+            <Badge variant="outline" className="text-emerald-600 border-emerald-500/20 bg-emerald-50">
+              <Activity className="h-3 w-3 mr-1" /> System Active
+            </Badge>
+          </div>
+        </div>
+        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>General Settings</CardTitle>
-          <CardDescription>Configure system-wide settings</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <h3 className="font-semibold">Tenant Portal</h3>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Tenant Self-Service Portal</Label>
-                  <p className="text-sm text-muted-foreground">Allow tenants to access their portal</p>
-                </div>
-                <Switch
-                  checked={formData.tenantSelfServiceEnabled}
-                  onCheckedChange={(v) => setFormData({ ...formData, tenantSelfServiceEnabled: v })}
-                />
+      {/* Quick Settings Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="group bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('notifications')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                <Bell className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Notifications</p>
+                <p className="text-xs text-muted-foreground">
+                  {[formData.emailNotificationEnabled, formData.smsNotificationEnabled, formData.telegramNotificationEnabled, formData.whatsappNotificationEnabled].filter(Boolean).length} active
+                </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('sms')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors">
+                <MessageSquare className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">SMS</p>
+                <p className="text-xs text-muted-foreground">{smsSettings.hasApiKey ? 'Configured' : 'Setup needed'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('payments')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
+                <Wallet className="h-4 w-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Payments</p>
+                <p className="text-xs text-muted-foreground">{formData.advancePaymentMaxMonths}mo max</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-teal-500/10 to-teal-500/5 border-teal-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => toggleSection('portal')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
+                <Building2 className="h-4 w-4 text-teal-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Portal</p>
+                <p className="text-xs text-muted-foreground">{formData.tenantSelfServiceEnabled ? 'Enabled' : 'Disabled'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-            <Separator />
-
-            <div className="space-y-4">
-              <h3 className="font-semibold">Notifications</h3>
-              <div className="grid gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    <Label>Email Notifications</Label>
-                  </div>
-                  <Switch
-                    checked={formData.emailNotificationEnabled}
-                    onCheckedChange={(v) => setFormData({ ...formData, emailNotificationEnabled: v })}
+      {/* SMS Configuration Card */}
+      <Card className="border-primary/20 shadow-sm overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+          onClick={() => toggleSection('sms')}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/10">
+              <MessageSquare className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">SMS Ethiopia Configuration</CardTitle>
+              <CardDescription>Configure SMSEthiopia API for sending SMS notifications</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {smsSettings.hasApiKey && (
+              <Badge variant="outline" className="text-emerald-600 border-emerald-500/20 bg-emerald-50">
+                <Check className="h-3 w-3 mr-1" /> Active
+              </Badge>
+            )}
+            <div className={`transition-transform duration-200 ${expandedSections.sms ? 'rotate-180' : ''}`}>
+              <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+        
+        {expandedSections.sms && (
+          <CardContent className="pt-4 border-t border-border/50">
+            <form onSubmit={handleSmsSettingsSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 text-sm font-medium">
+                    <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    API Key
+                  </Label>
+                  <Input
+                    type="password"
+                    placeholder={smsSettings.hasApiKey ? '****' + (smsSettings.smsApiKey?.slice(-4) || '') : 'Enter your SMSEthiopia API Key'}
+                    value={smsSettings.smsApiKey}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, smsApiKey: e.target.value })}
+                    className="border-emerald-500/20 focus:border-emerald-500"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Get your API key from <span className="text-emerald-600 font-medium">Console → API Keys</span> at smsethiopia.et
+                  </p>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4" />
-                    <Label>SMS Notifications</Label>
-                  </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Sender ID (Optional)</Label>
+                  <Input
+                    placeholder="YourBrand"
+                    value={smsSettings.smsSenderId || ''}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, smsSenderId: e.target.value })}
+                    className="border-emerald-500/20 focus:border-emerald-500"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Custom sender name for your SMS messages
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">API Base URL</Label>
+                <Input
+                  value={smsSettings.smsBaseUrl}
+                  onChange={(e) => setSmsSettings({ ...smsSettings, smsBaseUrl: e.target.value })}
+                  className="border-emerald-500/20 focus:border-emerald-500"
+                />
+              </div>
+              
+              {/* Test SMS Section */}
+              <div className="pt-4 border-t border-border/50">
+                <h4 className="font-medium mb-3 flex items-center gap-2 text-sm">
+                  <Send className="h-4 w-4 text-emerald-600" />
+                  Test SMS Configuration
+                </h4>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="0912345678 or 251912345678"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    className="flex-1 border-emerald-500/20 focus:border-emerald-500"
+                  />
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={handleTestSms}
+                    disabled={isTestLoading || !smsSettings.hasApiKey}
+                    className="border-emerald-500/20 text-emerald-600 hover:bg-emerald-50"
+                  >
+                    {isTestLoading ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Send Test
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Enter an Ethiopian phone number to test your SMS configuration
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                <div className="flex items-center gap-3">
                   <Switch
                     checked={formData.smsNotificationEnabled}
                     onCheckedChange={(v) => setFormData({ ...formData, smsNotificationEnabled: v })}
                   />
+                  <Label className="font-medium">Enable SMS Notifications</Label>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" />
-                    <Label>Telegram Notifications</Label>
+                <Button type="submit" disabled={isSmsLoading} className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700">
+                  {isSmsLoading ? 'Saving...' : 'Save SMS Settings'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* General Settings Card */}
+      <Card className="border-border/50 shadow-sm overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+          onClick={() => toggleSection('notifications')}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+              <Bell className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Notification Settings</CardTitle>
+              <CardDescription>Configure system-wide notification preferences</CardDescription>
+            </div>
+          </div>
+          <div className={`transition-transform duration-200 ${expandedSections.notifications ? 'rotate-180' : ''}`}>
+            <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+        
+        {expandedSections.notifications && (
+          <CardContent className="pt-4 border-t border-border/50">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Portal Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Building2 className="h-4 w-4" />
+                  TENANT PORTAL
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                  <div>
+                    <Label className="font-medium">Tenant Self-Service Portal</Label>
+                    <p className="text-sm text-muted-foreground">Allow tenants to access their portal</p>
                   </div>
                   <Switch
-                    checked={formData.telegramNotificationEnabled}
-                    onCheckedChange={(v) => setFormData({ ...formData, telegramNotificationEnabled: v })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" />
-                    <Label>WhatsApp Notifications</Label>
-                  </div>
-                  <Switch
-                    checked={formData.whatsappNotificationEnabled}
-                    onCheckedChange={(v) => setFormData({ ...formData, whatsappNotificationEnabled: v })}
+                    checked={formData.tenantSelfServiceEnabled}
+                    onCheckedChange={(v) => setFormData({ ...formData, tenantSelfServiceEnabled: v })}
                   />
                 </div>
               </div>
-            </div>
 
-            <Separator />
+              <Separator />
 
-            <div className="space-y-4">
-              <h3 className="font-semibold">Payment Settings</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Max Advance Payment Months</Label>
-                  <Input
-                    type="number"
-                    value={formData.advancePaymentMaxMonths}
-                    onChange={(e) => setFormData({ ...formData, advancePaymentMaxMonths: parseInt(e.target.value) })}
-                  />
+              {/* Notification Channels */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Bell className="h-4 w-4" />
+                  NOTIFICATION CHANNELS
                 </div>
-                <div className="space-y-2">
-                  <Label>Late Payment Penalty (%)</Label>
-                  <Input
-                    type="number"
-                    value={formData.latePaymentPenaltyPercent}
-                    onChange={(e) => setFormData({ ...formData, latePaymentPenaltyPercent: parseFloat(e.target.value) })}
-                  />
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Mail className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <Label className="font-medium">Email Notifications</Label>
+                        <p className="text-xs text-muted-foreground">Send notifications via email</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={formData.emailNotificationEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, emailNotificationEnabled: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-teal-500/10">
+                        <MessageSquare className="h-4 w-4 text-teal-600" />
+                      </div>
+                      <div>
+                        <Label className="font-medium">Telegram Notifications</Label>
+                        <p className="text-xs text-muted-foreground">Send notifications via Telegram bot</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={formData.telegramNotificationEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, telegramNotificationEnabled: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-emerald-500/10">
+                        <MessageSquare className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <Label className="font-medium">WhatsApp Notifications</Label>
+                        <p className="text-xs text-muted-foreground">Send notifications via WhatsApp</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={formData.whatsappNotificationEnabled}
+                      onCheckedChange={(v) => setFormData({ ...formData, whatsappNotificationEnabled: v })}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <Button type="submit">Save Settings</Button>
-          </form>
-        </CardContent>
+              <Separator />
+
+              {/* Payment Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Wallet className="h-4 w-4" />
+                  PAYMENT SETTINGS
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="font-medium">Max Advance Payment Months</Label>
+                    <Input
+                      type="number"
+                      value={formData.advancePaymentMaxMonths}
+                      onChange={(e) => setFormData({ ...formData, advancePaymentMaxMonths: parseInt(e.target.value) })}
+                      className="border-amber-500/20 focus:border-amber-500"
+                    />
+                    <p className="text-xs text-muted-foreground">Maximum months tenants can pay in advance</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="font-medium">Late Payment Penalty (%)</Label>
+                    <Input
+                      type="number"
+                      value={formData.latePaymentPenaltyPercent}
+                      onChange={(e) => setFormData({ ...formData, latePaymentPenaltyPercent: parseFloat(e.target.value) })}
+                      className="border-amber-500/20 focus:border-amber-500"
+                    />
+                    <p className="text-xs text-muted-foreground">Percentage penalty for late payments</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-border/50">
+                <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500 shadow-lg shadow-primary/20">
+                  Save All Settings
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Future Settings Placeholder - Integrations */}
+      <Card className="border-dashed border-2 border-border/50">
+        <div 
+          className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+          onClick={() => toggleSection('integrations')}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/10">
+              <Zap className="h-5 w-5 text-purple-600" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Integrations</CardTitle>
+              <CardDescription>Connect third-party services (Coming Soon)</CardDescription>
+            </div>
+          </div>
+          <Badge variant="outline" className="text-purple-600 border-purple-500/20 bg-purple-50">
+            <Zap className="h-3 w-3 mr-1" /> Coming Soon
+          </Badge>
+        </div>
+        
+        {expandedSections.integrations && (
+          <CardContent className="pt-4 border-t border-border/50">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[
+                { name: 'Chapa Payment', icon: CreditCard, desc: 'Online payment gateway' },
+                { name: 'Telebirr', icon: Phone, desc: 'Mobile money integration' },
+                { name: 'Google Maps', icon: MapPin, desc: 'Property location services' },
+              ].map((integration) => (
+                <div key={integration.name} className="flex items-center gap-3 p-4 rounded-lg bg-muted/30 border border-border/50 opacity-60">
+                  <div className="p-2 rounded-lg bg-purple-500/10">
+                    <integration.icon className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{integration.name}</p>
+                    <p className="text-xs text-muted-foreground">{integration.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        )}
       </Card>
     </div>
   );
