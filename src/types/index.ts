@@ -195,6 +195,8 @@ export interface SystemSettings {
   taxIncludeInPrice: boolean;
   applyTaxToInvoices: boolean;
   applyTaxToContracts: boolean;
+  // Calendar Configuration
+  defaultCalendar: 'gregorian' | 'ethiopian';
 }
 
 export interface DashboardStats {

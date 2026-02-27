@@ -115,6 +115,9 @@ model SystemSettings {
   applyTaxToInvoices    Boolean  @default(true)
   applyTaxToContracts   Boolean  @default(true)
   
+  // Calendar Configuration
+  defaultCalendar       String   @default("gregorian") // gregorian or ethiopian
+  
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

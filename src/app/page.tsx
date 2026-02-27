@@ -28,7 +28,7 @@ import {
   ArrowUpRight, ArrowDownRight, Activity, Target, Zap, Star, Crown, Calculator,
   ChevronDown, ChevronRight, LayoutGrid, Shield, UserCog, KeyRound,
   Landmark, HomeIcon, UserCircle, FileSignature, DollarSignIcon, ReceiptIcon,
-  CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers
+  CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers, Globe, CalendarDays
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
@@ -39,6 +39,7 @@ import type {
   User, Property, Unit, Tenant, Contract, Invoice, Payment, 
   ContractTerminationRequest, PropertyAssignment, SystemSettings, DashboardStats 
 } from '@/types';
+import { gregorianToEthiopian, formatEthiopianDate, CalendarType } from '@/lib/ethiopian-calendar';
 
 // API helper
 async function api<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -63,6 +64,17 @@ export default function PropertyManagementSystem() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  
+  // Calendar preference state (user can override system default)
+  const [userCalendar, setUserCalendar] = useState<'gregorian' | 'ethiopian'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('preferred-calendar');
+      if (stored === 'gregorian' || stored === 'ethiopian') {
+        return stored;
+      }
+    }
+    return 'gregorian';
+  });
 
   // Data states
   const [properties, setProperties] = useState<Property[]>([]);
@@ -160,10 +172,41 @@ export default function PropertyManagementSystem() {
       loadData();
     }
   }, [isAuthenticated, loadData]);
+  
+  // Update user calendar when system default changes
+  useEffect(() => {
+    if (settings?.defaultCalendar) {
+      const stored = localStorage.getItem('preferred-calendar');
+      if (!stored) {
+        setUserCalendar(settings.defaultCalendar);
+      }
+    }
+  }, [settings?.defaultCalendar]);
 
   const handleLogout = async () => {
     await api('/auth/logout', { method: 'POST' });
     logout();
+  };
+  
+  // Toggle calendar type
+  const toggleCalendar = () => {
+    const newType = userCalendar === 'gregorian' ? 'ethiopian' : 'gregorian';
+    setUserCalendar(newType);
+    localStorage.setItem('preferred-calendar', newType);
+  };
+  
+  // Format date based on calendar type
+  const formatDate = (date: Date | string, format: 'short' | 'long' = 'short') => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    if (userCalendar === 'ethiopian') {
+      const ethDate = gregorianToEthiopian(dateObj);
+      return formatEthiopianDate(ethDate, format);
+    }
+    return dateObj.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: format === 'long' ? 'long' : 'short',
+      day: 'numeric',
+    });
   };
 
   if (isLoading) {
@@ -198,6 +241,25 @@ export default function PropertyManagementSystem() {
             </span>
           </div>
           <div className="ml-auto flex items-center gap-4">
+            {/* Calendar Toggle */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={toggleCalendar}
+              className="hidden sm:flex gap-2 border-amber-200 hover:bg-amber-50 dark:border-amber-800 dark:hover:bg-amber-950"
+            >
+              {userCalendar === 'ethiopian' ? (
+                <>
+                  <CalendarDays className="h-4 w-4 text-amber-600" />
+                  <span className="text-xs">Ethiopian</span>
+                </>
+              ) : (
+                <>
+                  <Globe className="h-4 w-4" />
+                  <span className="text-xs">Gregorian</span>
+                </>
+              )}
+            </Button>
             <Badge variant="outline" className="hidden sm:flex border-primary/20 text-primary bg-primary/5">
               {user?.role.replace('_', ' ')}
             </Badge>
@@ -6703,6 +6765,8 @@ function SettingsView({ settings, setSettings }: {
     taxIncludeInPrice: settings?.taxIncludeInPrice ?? false,
     applyTaxToInvoices: settings?.applyTaxToInvoices ?? true,
     applyTaxToContracts: settings?.applyTaxToContracts ?? true,
+    // Calendar Settings
+    defaultCalendar: settings?.defaultCalendar ?? 'gregorian',
   }));
 
   // SMS Settings state
@@ -6926,6 +6990,49 @@ function SettingsView({ settings, setSettings }: {
                       <div className={`h-2 w-2 rounded-full ${formData.tenantSelfServiceEnabled ? 'bg-green-500' : 'bg-gray-400'}`} />
                       <span className="font-semibold">{formData.tenantSelfServiceEnabled ? 'Enabled' : 'Disabled'}</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Calendar Settings */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 border border-amber-200 dark:border-amber-800/30">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+                        <Calendar className="h-6 w-6 text-amber-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">Default Calendar</h3>
+                        <p className="text-sm text-muted-foreground">Set the system default calendar for all users. Users can still switch to their preferred calendar.</p>
+                      </div>
+                    </div>
+                    <Select
+                      value={formData.defaultCalendar}
+                      onValueChange={(v) => setFormData({ ...formData, defaultCalendar: v as 'gregorian' | 'ethiopian' })}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gregorian">
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4" />
+                            Gregorian
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="ethiopian">
+                          <div className="flex items-center gap-2">
+                            <CalendarDays className="h-4 w-4" />
+                            Ethiopian (ቀን ቆጠራ)
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-800/30">
+                    <p className="text-xs text-muted-foreground">
+                      Ethiopian calendar (Ge'ez) has 13 months with Meskerem as the first month. 
+                      New year starts on September 11 (or 12 in leap years).
+                    </p>
                   </div>
                 </div>
 
