@@ -3723,6 +3723,11 @@ function TenantsView({ tenants, setTenants }: {
   setTenants: React.Dispatch<React.SetStateAction<Tenant[]>>;
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -3735,6 +3740,12 @@ function TenantsView({ tenants, setTenants }: {
     emergencyPhone: '',
   });
 
+  const filteredTenants = tenants.filter(t => 
+    t.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.phone.includes(searchQuery) ||
+    (t.email || t.user?.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -3745,8 +3756,37 @@ function TenantsView({ tenants, setTenants }: {
       setTenants([...tenants, newTenant]);
       setIsDialogOpen(false);
       resetForm();
+      toast({ title: 'Success', description: 'Tenant created successfully' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create tenant', variant: 'destructive' });
+    }
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenant) return;
+    try {
+      const updated = await api<Tenant>(`/tenants/${selectedTenant.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(formData),
+      });
+      setTenants(tenants.map(t => t.id === selectedTenant.id ? updated : t));
+      setIsEditDialogOpen(false);
+      setSelectedTenant(null);
+      resetForm();
+      toast({ title: 'Success', description: 'Tenant updated successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update tenant', variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await api(`/tenants/${id}`, { method: 'DELETE' });
+      setTenants(tenants.filter(t => t.id !== id));
+      toast({ title: 'Success', description: 'Tenant deleted successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to delete tenant', variant: 'destructive' });
     }
   };
 
@@ -3764,48 +3804,425 @@ function TenantsView({ tenants, setTenants }: {
     });
   };
 
+  const openEditDialog = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setFormData({
+      fullName: tenant.fullName,
+      email: tenant.email || tenant.user?.email || '',
+      password: '',
+      phone: tenant.phone,
+      address: tenant.address || '',
+      idType: tenant.idType || '',
+      idNumber: tenant.idNumber || '',
+      emergencyContact: tenant.emergencyContact || '',
+      emergencyPhone: tenant.emergencyPhone || '',
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const getIdTypeLabel = (type: string | null) => {
+    switch(type) {
+      case 'national_id': return 'National ID';
+      case 'passport': return 'Passport';
+      case 'kebele_id': return 'Kebele ID';
+      default: return 'Not Set';
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Tenants</h1>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg">
+            <Users className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">Tenants</h1>
+            <p className="text-sm text-muted-foreground">{tenants.length} registered tenants</p>
+          </div>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Add Tenant</Button>
+            <Button className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700">
+              <Plus className="mr-2 h-4 w-4" /> Add Tenant
+            </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Add New Tenant</DialogTitle>
+          <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle className="flex items-center gap-2">
+                <UserCheck className="h-5 w-5 text-violet-600" />
+                Add New Tenant
+              </DialogTitle>
+              <DialogDescription>Register a new tenant in the system</DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Full Name</Label>
-                  <Input value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} required />
+            <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
+              <form id="tenant-form" onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Full Name *</Label>
+                    <Input value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} required className="border-violet-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Phone *</Label>
+                    <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required className="border-violet-500/20" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Email *</Label>
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required className="border-violet-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Password *</Label>
+                    <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required className="border-violet-500/20" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required />
+                  <Label className="text-sm font-medium">Address</Label>
+                  <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="border-violet-500/20" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">ID Type</Label>
+                    <Select value={formData.idType} onValueChange={(v) => setFormData({ ...formData, idType: v })}>
+                      <SelectTrigger className="border-violet-500/20"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="national_id">National ID</SelectItem>
+                        <SelectItem value="passport">Passport</SelectItem>
+                        <SelectItem value="kebele_id">Kebele ID</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">ID Number</Label>
+                    <Input value={formData.idNumber} onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })} className="border-violet-500/20" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Emergency Contact</Label>
+                    <Input value={formData.emergencyContact} onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })} className="border-violet-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Emergency Phone</Label>
+                    <Input value={formData.emergencyPhone} onChange={(e) => setFormData({ ...formData, emergencyPhone: e.target.value })} className="border-violet-500/20" />
+                  </div>
+                </div>
+              </form>
+            </div>
+            <DialogFooter className="p-6 pt-0 border-t">
+              <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+              <Button type="submit" form="tenant-form" className="bg-gradient-to-r from-violet-500 to-purple-600">Create Tenant</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-violet-50 to-purple-50 border-violet-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-violet-600 font-medium">Total Tenants</p>
+                <p className="text-2xl font-bold text-violet-700">{tenants.length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-violet-100">
+                <Users className="h-5 w-5 text-violet-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium">With ID</p>
+                <p className="text-2xl font-bold text-green-700">{tenants.filter(t => t.idType).length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-green-100">
+                <FileCheck className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-blue-600 font-medium">With Email</p>
+                <p className="text-2xl font-bold text-blue-700">{tenants.filter(t => t.email || t.user?.email).length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-blue-100">
+                <Mail className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-amber-600 font-medium">New This Month</p>
+                <p className="text-2xl font-bold text-amber-700">{tenants.filter(t => new Date(t.createdAt).getMonth() === new Date().getMonth()).length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-100">
+                <TrendingUp className="h-5 w-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and View Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search tenants by name, phone, or email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 border-violet-500/20"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-violet-500' : ''}>
+            <Building className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === 'table' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('table')} className={viewMode === 'table' ? 'bg-violet-500' : ''}>
+            <FileText className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredTenants.map((tenant) => (
+            <Card key={tenant.id} className="group hover:shadow-lg transition-all duration-300 border-violet-100 hover:border-violet-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-12 w-12 border-2 border-violet-200">
+                      <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white font-semibold">
+                        {tenant.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <CardTitle className="text-base">{tenant.fullName}</CardTitle>
+                      <CardDescription className="text-xs">{tenant.email || tenant.user?.email || 'No email'}</CardDescription>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span>{tenant.phone}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span>{getIdTypeLabel(tenant.idType)} {tenant.idNumber ? `: ${tenant.idNumber}` : ''}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span>Added {new Date(tenant.createdAt).toLocaleDateString()}</span>
+                </div>
+                <div className="flex items-center gap-2 pt-2 border-t">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedTenant(tenant); setIsDetailDialogOpen(true); }}>
+                    <Eye className="h-4 w-4 mr-1" /> View
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditDialog(tenant)}>
+                    <Edit className="h-4 w-4 mr-1" /> Edit
+                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Tenant</AlertDialogTitle>
+                        <AlertDialogDescription>Are you sure you want to delete {tenant.fullName}? This action cannot be undone.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => handleDelete(tenant.id)}>Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {filteredTenants.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No tenants found</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === 'table' && (
+        <Card className="border-violet-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-violet-50/50">
+                <TableHead>Tenant</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTenants.map((tenant) => (
+                <TableRow key={tenant.id} className="hover:bg-violet-50/50">
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs">
+                          {tenant.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{tenant.fullName}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{tenant.phone}</TableCell>
+                  <TableCell>{tenant.email || tenant.user?.email || '-'}</TableCell>
+                  <TableCell>{getIdTypeLabel(tenant.idType)} {tenant.idNumber ? `: ${tenant.idNumber}` : ''}</TableCell>
+                  <TableCell>{new Date(tenant.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => { setSelectedTenant(tenant); setIsDetailDialogOpen(true); }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(tenant)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-red-600">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Tenant</AlertDialogTitle>
+                            <AlertDialogDescription>Are you sure you want to delete {tenant.fullName}?</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => handleDelete(tenant.id)}>Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredTenants.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12">
+                    <Users className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No tenants found</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-violet-600" />
+              Tenant Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTenant && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-violet-100 to-purple-100">
+                <Avatar className="h-16 w-16 border-4 border-white shadow-lg">
+                  <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xl font-bold">
+                    {selectedTenant.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-xl font-bold">{selectedTenant.fullName}</h3>
+                  <p className="text-muted-foreground">{selectedTenant.email || selectedTenant.user?.email || 'No email'}</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Phone</p>
+                  <p className="font-semibold">{selectedTenant.phone}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">ID Type</p>
+                  <p className="font-semibold">{getIdTypeLabel(selectedTenant.idType)}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">ID Number</p>
+                  <p className="font-semibold">{selectedTenant.idNumber || 'Not set'}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Address</p>
+                  <p className="font-semibold">{selectedTenant.address || 'Not set'}</p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground">Emergency Contact</p>
+                <p className="font-semibold">{selectedTenant.emergencyContact ? `${selectedTenant.emergencyContact} (${selectedTenant.emergencyPhone || 'No phone'})` : 'Not set'}</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setSelectedTenant(null); resetForm(); } }}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5 text-violet-600" />
+              Edit Tenant
+            </DialogTitle>
+            <DialogDescription>Update tenant information</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
+            <form id="edit-form" onSubmit={handleEdit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
+                  <Label className="text-sm font-medium">Full Name</Label>
+                  <Input value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} required className="border-violet-500/20" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required />
+                  <Label className="text-sm font-medium">Phone</Label>
+                  <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required className="border-violet-500/20" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Address</Label>
-                <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+                <Label className="text-sm font-medium">Email</Label>
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required className="border-violet-500/20" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Address</Label>
+                <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="border-violet-500/20" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>ID Type</Label>
+                  <Label className="text-sm font-medium">ID Type</Label>
                   <Select value={formData.idType} onValueChange={(v) => setFormData({ ...formData, idType: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger className="border-violet-500/20"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="national_id">National ID</SelectItem>
                       <SelectItem value="passport">Passport</SelectItem>
@@ -3814,52 +4231,28 @@ function TenantsView({ tenants, setTenants }: {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>ID Number</Label>
-                  <Input value={formData.idNumber} onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })} />
+                  <Label className="text-sm font-medium">ID Number</Label>
+                  <Input value={formData.idNumber} onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })} className="border-violet-500/20" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Emergency Contact</Label>
-                  <Input value={formData.emergencyContact} onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })} />
+                  <Label className="text-sm font-medium">Emergency Contact</Label>
+                  <Input value={formData.emergencyContact} onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })} className="border-violet-500/20" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Emergency Phone</Label>
-                  <Input value={formData.emergencyPhone} onChange={(e) => setFormData({ ...formData, emergencyPhone: e.target.value })} />
+                  <Label className="text-sm font-medium">Emergency Phone</Label>
+                  <Input value={formData.emergencyPhone} onChange={(e) => setFormData({ ...formData, emergencyPhone: e.target.value })} className="border-violet-500/20" />
                 </div>
               </div>
-              <DialogFooter>
-                <Button type="submit">Create Tenant</Button>
-              </DialogFooter>
             </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead>Created</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tenants.map((tenant) => (
-              <TableRow key={tenant.id}>
-                <TableCell className="font-medium">{tenant.fullName}</TableCell>
-                <TableCell>{tenant.phone}</TableCell>
-                <TableCell>{tenant.email || tenant.user?.email}</TableCell>
-                <TableCell>{tenant.idType}: {tenant.idNumber}</TableCell>
-                <TableCell>{new Date(tenant.createdAt).toLocaleDateString()}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+          </div>
+          <DialogFooter className="p-6 pt-0 border-t">
+            <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedTenant(null); resetForm(); }}>Cancel</Button>
+            <Button type="submit" form="edit-form" className="bg-gradient-to-r from-violet-500 to-purple-600">Update Tenant</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -3875,7 +4268,11 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTerminateOpen, setIsTerminateOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [formData, setFormData] = useState({
     tenantId: '',
     propertyId: '',
@@ -3896,6 +4293,14 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
   });
 
   const availableUnits = units.filter(u => u.propertyId === formData.propertyId && u.status === 'available');
+
+  const filteredContracts = contracts.filter(c => {
+    const matchesSearch = 
+      (c.tenant?.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.property?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3951,189 +4356,437 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      DRAFT: 'secondary',
-      UNDER_REVIEW: 'outline',
-      ACTIVE: 'default',
-      PENDING_TERMINATION: 'destructive',
-      TERMINATED: 'secondary',
-      CANCELLED: 'destructive',
+    const styles: Record<string, string> = {
+      DRAFT: 'bg-gray-100 text-gray-700 border-gray-200',
+      UNDER_REVIEW: 'bg-amber-100 text-amber-700 border-amber-200',
+      ACTIVE: 'bg-green-100 text-green-700 border-green-200',
+      PENDING_TERMINATION: 'bg-red-100 text-red-700 border-red-200',
+      TERMINATED: 'bg-gray-100 text-gray-500 border-gray-200',
+      CANCELLED: 'bg-red-100 text-red-600 border-red-200',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status.replace('_', ' ')}</Badge>;
+    return (
+      <Badge className={`${styles[status] || 'bg-gray-100 text-gray-700'} font-medium`}>
+        {status.replace('_', ' ')}
+      </Badge>
+    );
+  };
+
+  const getDaysRemaining = (endDate: string) => {
+    const end = new Date(endDate);
+    const now = new Date();
+    const diff = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diff;
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Contracts</h1>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
+            <FileText className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">Contracts</h1>
+            <p className="text-sm text-muted-foreground">{contracts.length} total contracts</p>
+          </div>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> New Contract</Button>
+            <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700">
+              <Plus className="mr-2 h-4 w-4" /> New Contract
+            </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Create New Contract</DialogTitle>
+          <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle className="flex items-center gap-2">
+                <FileCheck className="h-5 w-5 text-emerald-600" />
+                Create New Contract
+              </DialogTitle>
+              <DialogDescription>Set up a new rental contract</DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tenant</Label>
-                <Select value={formData.tenantId} onValueChange={(v) => setFormData({ ...formData, tenantId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select tenant" /></SelectTrigger>
-                  <SelectContent>
-                    {tenants.map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Property</Label>
-                <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v, unitIds: [] })}>
-                  <SelectTrigger><SelectValue placeholder="Select property" /></SelectTrigger>
-                  <SelectContent>
-                    {properties.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Units</Label>
-                <div className="border rounded-lg p-2 max-h-32 overflow-y-auto">
-                  {availableUnits.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No available units</p>
-                  ) : (
-                    availableUnits.map(u => (
-                      <label key={u.id} className="flex items-center gap-2 p-1">
-                        <input
-                          type="checkbox"
-                          checked={formData.unitIds.includes(u.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData({ ...formData, unitIds: [...formData.unitIds, u.id], monthlyRent: String(parseFloat(formData.monthlyRent || '0') + u.monthlyRent) });
-                            } else {
-                              setFormData({ ...formData, unitIds: formData.unitIds.filter(id => id !== u.id) });
-                            }
-                          }}
-                          className="rounded"
-                        />
-                        <span className="text-sm">{u.unitNumber} - {u.monthlyRent.toLocaleString()} ETB/mo</span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
+              <form id="contract-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Start Date</Label>
-                  <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} required />
+                  <Label className="text-sm font-medium">Tenant *</Label>
+                  <Select value={formData.tenantId} onValueChange={(v) => setFormData({ ...formData, tenantId: v })}>
+                    <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select tenant" /></SelectTrigger>
+                    <SelectContent>
+                      {tenants.map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>End Date</Label>
-                  <Input type="date" value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} required />
+                  <Label className="text-sm font-medium">Property *</Label>
+                  <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v, unitIds: [] })}>
+                    <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select property" /></SelectTrigger>
+                    <SelectContent>
+                      {properties.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Monthly Rent (ETB)</Label>
-                  <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required />
+                  <Label className="text-sm font-medium">Units</Label>
+                  <div className="border border-emerald-200 rounded-lg p-3 max-h-32 overflow-y-auto bg-emerald-50/30">
+                    {availableUnits.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No available units</p>
+                    ) : (
+                      availableUnits.map(u => (
+                        <label key={u.id} className="flex items-center gap-2 p-1 hover:bg-emerald-100/50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.unitIds.includes(u.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({ ...formData, unitIds: [...formData.unitIds, u.id], monthlyRent: String(parseFloat(formData.monthlyRent || '0') + u.monthlyRent) });
+                              } else {
+                                setFormData({ ...formData, unitIds: formData.unitIds.filter(id => id !== u.id) });
+                              }
+                            }}
+                            className="rounded border-emerald-300"
+                          />
+                          <span className="text-sm">{u.unitNumber} - {u.monthlyRent.toLocaleString()} ETB/mo</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Start Date *</Label>
+                    <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} required className="border-emerald-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">End Date *</Label>
+                    <Input type="date" value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} required className="border-emerald-500/20" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Monthly Rent (ETB) *</Label>
+                    <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-emerald-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Security Deposit</Label>
+                    <Input type="number" value={formData.securityDeposit} onChange={(e) => setFormData({ ...formData, securityDeposit: e.target.value })} className="border-emerald-500/20" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Security Deposit (ETB)</Label>
-                  <Input type="number" value={formData.securityDeposit} onChange={(e) => setFormData({ ...formData, securityDeposit: e.target.value })} />
+                  <Label className="text-sm font-medium">Advance Payment (ETB)</Label>
+                  <Input type="number" value={formData.advancePayment} onChange={(e) => setFormData({ ...formData, advancePayment: e.target.value })} className="border-emerald-500/20" />
+                  <p className="text-xs text-muted-foreground">Contract will be under review until payment is approved.</p>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Advance Payment (ETB)</Label>
-                <Input type="number" value={formData.advancePayment} onChange={(e) => setFormData({ ...formData, advancePayment: e.target.value })} />
-                <p className="text-xs text-muted-foreground">Optional advance payment. Contract will be under review until payment is approved.</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Notes</Label>
-                <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
-              </div>
-              <DialogFooter>
-                <Button type="submit">Create Contract</Button>
-              </DialogFooter>
-            </form>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Notes</Label>
+                  <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="border-emerald-500/20" />
+                </div>
+              </form>
+            </div>
+            <DialogFooter className="p-6 pt-0 border-t">
+              <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+              <Button type="submit" form="contract-form" className="bg-gradient-to-r from-emerald-500 to-teal-600">Create Contract</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tenant</TableHead>
-              <TableHead>Property</TableHead>
-              <TableHead>Units</TableHead>
-              <TableHead>Rent (ETB)</TableHead>
-              <TableHead>Period</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {contracts.map((contract) => (
-              <TableRow key={contract.id}>
-                <TableCell className="font-medium">{contract.tenant?.fullName}</TableCell>
-                <TableCell>{contract.property?.name}</TableCell>
-                <TableCell>{contract.units?.map(u => u.unit?.unitNumber).join(', ')}</TableCell>
-                <TableCell>{contract.monthlyRent.toLocaleString()}</TableCell>
-                <TableCell>
-                  {new Date(contract.startDate).toLocaleDateString()} - {new Date(contract.endDate).toLocaleDateString()}
-                </TableCell>
-                <TableCell>{getStatusBadge(contract.status)}</TableCell>
-                <TableCell>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'all' ? 'all' : 'all')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-emerald-600 font-medium">Total</p>
+                <p className="text-2xl font-bold text-emerald-700">{contracts.length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-100">
+                <FileText className="h-5 w-5 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'ACTIVE' ? 'all' : 'ACTIVE')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium">Active</p>
+                <p className="text-2xl font-bold text-green-700">{contracts.filter(c => c.status === 'ACTIVE').length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-green-100">
+                <Check className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'UNDER_REVIEW' ? 'all' : 'UNDER_REVIEW')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-amber-600 font-medium">Under Review</p>
+                <p className="text-2xl font-bold text-amber-700">{contracts.filter(c => c.status === 'UNDER_REVIEW').length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-100">
+                <Clock className="h-5 w-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-red-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'PENDING_TERMINATION' ? 'all' : 'PENDING_TERMINATION')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-red-600 font-medium">Pending Termination</p>
+                <p className="text-2xl font-bold text-red-700">{contracts.filter(c => c.status === 'PENDING_TERMINATION').length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-red-100">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and View Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search contracts by tenant or property..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 border-emerald-500/20"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40 border-emerald-500/20">
+            <SelectValue placeholder="Filter status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="DRAFT">Draft</SelectItem>
+            <SelectItem value="UNDER_REVIEW">Under Review</SelectItem>
+            <SelectItem value="ACTIVE">Active</SelectItem>
+            <SelectItem value="PENDING_TERMINATION">Pending Termination</SelectItem>
+            <SelectItem value="TERMINATED">Terminated</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex gap-2">
+          <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-emerald-500' : ''}>
+            <Building className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === 'table' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('table')} className={viewMode === 'table' ? 'bg-emerald-500' : ''}>
+            <FileText className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredContracts.map((contract) => {
+            const daysRemaining = getDaysRemaining(contract.endDate);
+            return (
+              <Card key={contract.id} className="group hover:shadow-lg transition-all duration-300 border-emerald-100 hover:border-emerald-300">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600">
+                        <FileText className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">{contract.tenant?.fullName || 'Unknown'}</CardTitle>
+                        <CardDescription className="text-xs">{contract.property?.name}</CardDescription>
+                      </div>
+                    </div>
+                    {getStatusBadge(contract.status)}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <DoorOpen className="h-4 w-4 text-muted-foreground" />
+                    <span>Units: {contract.units?.map(u => u.unit?.unitNumber).join(', ') || 'None'}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Banknote className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-semibold text-emerald-600">{contract.monthlyRent.toLocaleString()} ETB/mo</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span>{new Date(contract.startDate).toLocaleDateString()} - {new Date(contract.endDate).toLocaleDateString()}</span>
+                  </div>
                   {contract.status === 'ACTIVE' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedContract(contract);
-                        setIsTerminateOpen(true);
-                      }}
-                    >
-                      Terminate
-                    </Button>
+                    <div className={`flex items-center gap-2 text-sm ${daysRemaining < 30 ? 'text-red-600' : daysRemaining < 90 ? 'text-amber-600' : 'text-green-600'}`}>
+                      <Clock className="h-4 w-4" />
+                      <span>{daysRemaining > 0 ? `${daysRemaining} days remaining` : 'Expired'}</span>
+                    </div>
                   )}
-                </TableCell>
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedContract(contract); setIsDetailDialogOpen(true); }}>
+                      <Eye className="h-4 w-4 mr-1" /> View
+                    </Button>
+                    {contract.status === 'ACTIVE' && (
+                      <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:bg-red-50" onClick={() => { setSelectedContract(contract); setIsTerminateOpen(true); }}>
+                        <XCircle className="h-4 w-4 mr-1" /> Terminate
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          {filteredContracts.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <FileText className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No contracts found</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === 'table' && (
+        <Card className="border-emerald-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-emerald-50/50">
+                <TableHead>Tenant</TableHead>
+                <TableHead>Property</TableHead>
+                <TableHead>Units</TableHead>
+                <TableHead>Rent (ETB)</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredContracts.map((contract) => (
+                <TableRow key={contract.id} className="hover:bg-emerald-50/50">
+                  <TableCell className="font-medium">{contract.tenant?.fullName}</TableCell>
+                  <TableCell>{contract.property?.name}</TableCell>
+                  <TableCell>{contract.units?.map(u => u.unit?.unitNumber).join(', ')}</TableCell>
+                  <TableCell>{contract.monthlyRent.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <div className="text-xs">
+                      {new Date(contract.startDate).toLocaleDateString()} - {new Date(contract.endDate).toLocaleDateString()}
+                    </div>
+                  </TableCell>
+                  <TableCell>{getStatusBadge(contract.status)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => { setSelectedContract(contract); setIsDetailDialogOpen(true); }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {contract.status === 'ACTIVE' && (
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => { setSelectedContract(contract); setIsTerminateOpen(true); }}>
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredContracts.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12">
+                    <FileText className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No contracts found</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-emerald-600" />
+              Contract Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedContract && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-emerald-100 to-teal-100">
+                <div>
+                  <h3 className="text-xl font-bold">{selectedContract.tenant?.fullName}</h3>
+                  <p className="text-muted-foreground">{selectedContract.property?.name}</p>
+                </div>
+                {getStatusBadge(selectedContract.status)}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Units</p>
+                  <p className="font-semibold">{selectedContract.units?.map(u => u.unit?.unitNumber).join(', ') || 'None'}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Monthly Rent</p>
+                  <p className="font-semibold text-emerald-600">{selectedContract.monthlyRent.toLocaleString()} ETB</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Security Deposit</p>
+                  <p className="font-semibold">{selectedContract.securityDeposit?.toLocaleString() || 0} ETB</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Advance Payment</p>
+                  <p className="font-semibold">{selectedContract.advancePayment?.toLocaleString() || 0} ETB</p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground">Contract Period</p>
+                <p className="font-semibold">{new Date(selectedContract.startDate).toLocaleDateString()} - {new Date(selectedContract.endDate).toLocaleDateString()}</p>
+              </div>
+              {selectedContract.notes && (
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Notes</p>
+                  <p className="font-semibold">{selectedContract.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Termination Dialog */}
       <Dialog open={isTerminateOpen} onOpenChange={setIsTerminateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Request Contract Termination</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Request Contract Termination
+            </DialogTitle>
+            <DialogDescription>This will submit a termination request for approval</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Reason</Label>
-              <Textarea value={terminateData.reason} onChange={(e) => setTerminateData({ ...terminateData, reason: e.target.value })} />
+              <Label className="text-sm font-medium">Reason *</Label>
+              <Textarea value={terminateData.reason} onChange={(e) => setTerminateData({ ...terminateData, reason: e.target.value })} className="border-red-200" />
             </div>
             <div className="space-y-2">
-              <Label>Bank Account Number</Label>
-              <Input value={terminateData.bankAccountNumber} onChange={(e) => setTerminateData({ ...terminateData, bankAccountNumber: e.target.value })} />
+              <Label className="text-sm font-medium">Bank Account Number</Label>
+              <Input value={terminateData.bankAccountNumber} onChange={(e) => setTerminateData({ ...terminateData, bankAccountNumber: e.target.value })} className="border-red-200" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Bank Name</Label>
-                <Input value={terminateData.bankName} onChange={(e) => setTerminateData({ ...terminateData, bankName: e.target.value })} />
+                <Label className="text-sm font-medium">Bank Name</Label>
+                <Input value={terminateData.bankName} onChange={(e) => setTerminateData({ ...terminateData, bankName: e.target.value })} className="border-red-200" />
               </div>
               <div className="space-y-2">
-                <Label>Account Holder Name</Label>
-                <Input value={terminateData.accountHolderName} onChange={(e) => setTerminateData({ ...terminateData, accountHolderName: e.target.value })} />
+                <Label className="text-sm font-medium">Account Holder Name</Label>
+                <Input value={terminateData.accountHolderName} onChange={(e) => setTerminateData({ ...terminateData, accountHolderName: e.target.value })} className="border-red-200" />
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsTerminateOpen(false)}>Cancel</Button>
-              <Button onClick={handleTerminate}>Submit Request</Button>
-            </DialogFooter>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsTerminateOpen(false)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={handleTerminate}>Submit Request</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -4147,7 +4800,12 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
   contracts: Contract[];
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [sendingSmsId, setSendingSmsId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [formData, setFormData] = useState({
     contractId: '',
     amount: '',
@@ -4157,6 +4815,18 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
     notes: '',
     sendSmsNotification: false,
   });
+
+  const filteredInvoices = invoices.filter(inv => {
+    const matchesSearch = 
+      (inv.invoiceNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (inv.contract?.tenant?.fullName || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalAmount = invoices.reduce((sum, inv) => sum + inv.amount, 0);
+  const paidAmount = invoices.reduce((sum, inv) => sum + (inv.paidAmount || 0), 0);
+  const overdueCount = invoices.filter(inv => inv.status === 'OVERDUE').length;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4171,7 +4841,6 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
       setInvoices([...invoices, newInvoice]);
       setIsDialogOpen(false);
       
-      // Send SMS notification if enabled
       if (formData.sendSmsNotification && newInvoice.id) {
         try {
           await api('/sms', {
@@ -4216,130 +4885,383 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      PENDING: 'outline',
-      PAID: 'default',
-      PARTIALLY_PAID: 'secondary',
-      OVERDUE: 'destructive',
-      CANCELLED: 'destructive',
+    const styles: Record<string, string> = {
+      PENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+      PAID: 'bg-green-100 text-green-700 border-green-200',
+      PARTIALLY_PAID: 'bg-blue-100 text-blue-700 border-blue-200',
+      OVERDUE: 'bg-red-100 text-red-700 border-red-200',
+      CANCELLED: 'bg-gray-100 text-gray-500 border-gray-200',
     };
-    return <Badge variant={variants[status] || 'outline'}>{status.replace('_', ' ')}</Badge>;
+    return (
+      <Badge className={`${styles[status] || 'bg-gray-100 text-gray-700'} font-medium`}>
+        {status.replace('_', ' ')}
+      </Badge>
+    );
+  };
+
+  const getDaysUntilDue = (dueDate: string) => {
+    const due = new Date(dueDate);
+    const now = new Date();
+    const diff = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diff;
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Invoices</h1>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 shadow-lg">
+            <Receipt className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">Invoices</h1>
+            <p className="text-sm text-muted-foreground">{invoices.length} total invoices</p>
+          </div>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Create Invoice</Button>
+            <Button className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700">
+              <Plus className="mr-2 h-4 w-4" /> Create Invoice
+            </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Invoice</DialogTitle>
+          <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle className="flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-orange-600" />
+                Create Invoice
+              </DialogTitle>
+              <DialogDescription>Generate a new invoice for a tenant</DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Contract</Label>
-                <Select value={formData.contractId} onValueChange={(v) => setFormData({ ...formData, contractId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select contract" /></SelectTrigger>
-                  <SelectContent>
-                    {contracts.filter(c => c.status === 'ACTIVE').map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.tenant?.fullName} - {c.property?.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
+              <form id="invoice-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Amount (ETB)</Label>
-                  <Input type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
+                  <Label className="text-sm font-medium">Contract *</Label>
+                  <Select value={formData.contractId} onValueChange={(v) => setFormData({ ...formData, contractId: v })}>
+                    <SelectTrigger className="border-orange-500/20"><SelectValue placeholder="Select contract" /></SelectTrigger>
+                    <SelectContent>
+                      {contracts.filter(c => c.status === 'ACTIVE').map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.tenant?.fullName} - {c.property?.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Amount (ETB) *</Label>
+                    <Input type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="border-orange-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Due Date *</Label>
+                    <Input type="date" value={formData.dueDate} onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })} required className="border-orange-500/20" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Period Start *</Label>
+                    <Input type="date" value={formData.periodStart} onChange={(e) => setFormData({ ...formData, periodStart: e.target.value })} required className="border-orange-500/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Period End *</Label>
+                    <Input type="date" value={formData.periodEnd} onChange={(e) => setFormData({ ...formData, periodEnd: e.target.value })} required className="border-orange-500/20" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Due Date</Label>
-                  <Input type="date" value={formData.dueDate} onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })} required />
+                  <Label className="text-sm font-medium">Notes</Label>
+                  <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="border-orange-500/20" />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Period Start</Label>
-                  <Input type="date" value={formData.periodStart} onChange={(e) => setFormData({ ...formData, periodStart: e.target.value })} required />
+                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <Switch
+                    id="sendSms"
+                    checked={formData.sendSmsNotification}
+                    onCheckedChange={(v) => setFormData({ ...formData, sendSmsNotification: v })}
+                  />
+                  <Label htmlFor="sendSms" className="flex items-center gap-2 cursor-pointer">
+                    <MessageSquare className="h-4 w-4 text-orange-600" />
+                    Send SMS notification to tenant
+                  </Label>
                 </div>
-                <div className="space-y-2">
-                  <Label>Period End</Label>
-                  <Input type="date" value={formData.periodEnd} onChange={(e) => setFormData({ ...formData, periodEnd: e.target.value })} required />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Notes</Label>
-                <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
-              </div>
-              <div className="flex items-center gap-2 p-3 bg-primary/5 rounded-lg border border-primary/20">
-                <Switch
-                  id="sendSms"
-                  checked={formData.sendSmsNotification}
-                  onCheckedChange={(v) => setFormData({ ...formData, sendSmsNotification: v })}
-                />
-                <Label htmlFor="sendSms" className="flex items-center gap-2 cursor-pointer">
-                  <MessageSquare className="h-4 w-4 text-primary" />
-                  Send SMS notification to tenant
-                </Label>
-              </div>
-              <DialogFooter>
-                <Button type="submit">Create Invoice</Button>
-              </DialogFooter>
-            </form>
+              </form>
+            </div>
+            <DialogFooter className="p-6 pt-0 border-t">
+              <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+              <Button type="submit" form="invoice-form" className="bg-gradient-to-r from-orange-500 to-amber-600">Create Invoice</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Invoice #</TableHead>
-              <TableHead>Tenant</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead>Paid</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {invoices.map((invoice) => (
-              <TableRow key={invoice.id}>
-                <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                <TableCell>{invoice.contract?.tenant?.fullName}</TableCell>
-                <TableCell>{invoice.amount.toLocaleString()} ETB</TableCell>
-                <TableCell>{new Date(invoice.dueDate).toLocaleDateString()}</TableCell>
-                <TableCell>{invoice.paidAmount.toLocaleString()} ETB</TableCell>
-                <TableCell>{getStatusBadge(invoice.status)}</TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSendSms(invoice.id)}
-                    disabled={sendingSmsId === invoice.id}
-                    className="text-primary hover:bg-primary/10"
-                  >
-                    {sendingSmsId === invoice.id ? (
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                    ) : (
-                      <MessageSquare className="h-4 w-4" />
-                    )}
-                  </Button>
-                </TableCell>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-orange-600 font-medium">Total Invoiced</p>
+                <p className="text-2xl font-bold text-orange-700">{totalAmount.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-2 rounded-lg bg-orange-100">
+                <Receipt className="h-5 w-5 text-orange-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium">Total Collected</p>
+                <p className="text-2xl font-bold text-green-700">{paidAmount.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-2 rounded-lg bg-green-100">
+                <Wallet className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-red-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'OVERDUE' ? 'all' : 'OVERDUE')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-red-600 font-medium">Overdue</p>
+                <p className="text-2xl font-bold text-red-700">{overdueCount}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-red-100">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200/50 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'all' : 'PENDING')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-amber-600 font-medium">Pending</p>
+                <p className="text-2xl font-bold text-amber-700">{invoices.filter(i => i.status === 'PENDING').length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-100">
+                <Clock className="h-5 w-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and View Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Receipt className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search invoices by number or tenant..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 border-orange-500/20"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40 border-orange-500/20">
+            <SelectValue placeholder="Filter status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="PENDING">Pending</SelectItem>
+            <SelectItem value="PAID">Paid</SelectItem>
+            <SelectItem value="PARTIALLY_PAID">Partially Paid</SelectItem>
+            <SelectItem value="OVERDUE">Overdue</SelectItem>
+            <SelectItem value="CANCELLED">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex gap-2">
+          <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'bg-orange-500' : ''}>
+            <Building className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === 'table' ? 'default' : 'outline'} size="icon" onClick={() => setViewMode('table')} className={viewMode === 'table' ? 'bg-orange-500' : ''}>
+            <FileText className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredInvoices.map((invoice) => {
+            const daysUntilDue = getDaysUntilDue(invoice.dueDate);
+            return (
+              <Card key={invoice.id} className="group hover:shadow-lg transition-all duration-300 border-orange-100 hover:border-orange-300">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600">
+                        <Receipt className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">{invoice.invoiceNumber}</CardTitle>
+                        <CardDescription className="text-xs">{invoice.contract?.tenant?.fullName}</CardDescription>
+                      </div>
+                    </div>
+                    {getStatusBadge(invoice.status)}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-orange-50">
+                    <span className="text-sm text-muted-foreground">Amount</span>
+                    <span className="font-bold text-orange-600">{invoice.amount.toLocaleString()} ETB</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Wallet className="h-4 w-4 text-muted-foreground" />
+                    <span>Paid: <span className="font-semibold text-green-600">{invoice.paidAmount?.toLocaleString() || 0} ETB</span></span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span>Due: {new Date(invoice.dueDate).toLocaleDateString()}</span>
+                  </div>
+                  {invoice.status === 'PENDING' && (
+                    <div className={`flex items-center gap-2 text-sm ${daysUntilDue < 0 ? 'text-red-600' : daysUntilDue < 7 ? 'text-amber-600' : 'text-green-600'}`}>
+                      <Clock className="h-4 w-4" />
+                      <span>{daysUntilDue < 0 ? `${Math.abs(daysUntilDue)} days overdue` : `${daysUntilDue} days remaining`}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedInvoice(invoice); setIsDetailDialogOpen(true); }}>
+                      <Eye className="h-4 w-4 mr-1" /> View
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1 text-orange-600 hover:bg-orange-50" 
+                      onClick={() => handleSendSms(invoice.id)}
+                      disabled={sendingSmsId === invoice.id}
+                    >
+                      {sendingSmsId === invoice.id ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-600 border-t-transparent" />
+                      ) : (
+                        <MessageSquare className="h-4 w-4 mr-1" />
+                      )}
+                      SMS
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          {filteredInvoices.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <Receipt className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No invoices found</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === 'table' && (
+        <Card className="border-orange-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-orange-50/50">
+                <TableHead>Invoice #</TableHead>
+                <TableHead>Tenant</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Paid</TableHead>
+                <TableHead>Due Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredInvoices.map((invoice) => (
+                <TableRow key={invoice.id} className="hover:bg-orange-50/50">
+                  <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
+                  <TableCell>{invoice.contract?.tenant?.fullName}</TableCell>
+                  <TableCell className="font-semibold">{invoice.amount.toLocaleString()} ETB</TableCell>
+                  <TableCell className="text-green-600">{invoice.paidAmount?.toLocaleString() || 0} ETB</TableCell>
+                  <TableCell>{new Date(invoice.dueDate).toLocaleDateString()}</TableCell>
+                  <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => { setSelectedInvoice(invoice); setIsDetailDialogOpen(true); }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-orange-600"
+                        onClick={() => handleSendSms(invoice.id)}
+                        disabled={sendingSmsId === invoice.id}
+                      >
+                        {sendingSmsId === invoice.id ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-600 border-t-transparent" />
+                        ) : (
+                          <MessageSquare className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredInvoices.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12">
+                    <Receipt className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No invoices found</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-orange-600" />
+              Invoice Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedInvoice && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-orange-100 to-amber-100">
+                <div>
+                  <h3 className="text-xl font-bold">{selectedInvoice.invoiceNumber}</h3>
+                  <p className="text-muted-foreground">{selectedInvoice.contract?.tenant?.fullName}</p>
+                </div>
+                {getStatusBadge(selectedInvoice.status)}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Total Amount</p>
+                  <p className="text-xl font-bold text-orange-600">{selectedInvoice.amount.toLocaleString()} ETB</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Paid Amount</p>
+                  <p className="text-xl font-bold text-green-600">{selectedInvoice.paidAmount?.toLocaleString() || 0} ETB</p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground">Due Date</p>
+                <p className="font-semibold">{new Date(selectedInvoice.dueDate).toLocaleDateString()}</p>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground">Period</p>
+                <p className="font-semibold">
+                  {new Date(selectedInvoice.periodStart).toLocaleDateString()} - {new Date(selectedInvoice.periodEnd).toLocaleDateString()}
+                </p>
+              </div>
+              {selectedInvoice.notes && (
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Notes</p>
+                  <p className="font-semibold">{selectedInvoice.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
