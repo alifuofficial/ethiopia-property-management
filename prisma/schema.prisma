@@ -186,6 +186,7 @@ model Tenant {
   address       String?
   idType        String?  // passport, national_id, etc.
   idNumber      String?
+  idDocumentUrl String?  // URL to uploaded ID/Passport document
   emergencyContact String?
   emergencyPhone  String?
   createdAt     DateTime @default(now())

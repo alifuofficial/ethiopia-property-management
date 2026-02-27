@@ -63,6 +63,7 @@ export interface Tenant {
   address?: string;
   idType?: string;
   idNumber?: string;
+  idDocumentUrl?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
   user?: User;

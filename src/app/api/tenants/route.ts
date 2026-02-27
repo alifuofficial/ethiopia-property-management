@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, password, fullName, phone, address, idType, idNumber, emergencyContact, emergencyPhone } = body;
+    const { email, password, fullName, phone, address, idType, idNumber, idDocumentUrl, emergencyContact, emergencyPhone } = body;
 
     if (!email || !password || !fullName || !phone) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
           address: address || null,
           idType: idType || null,
           idNumber: idNumber || null,
+          idDocumentUrl: idDocumentUrl || null,
           emergencyContact: emergencyContact || null,
           emergencyPhone: emergencyPhone || null,
         },

@@ -3930,6 +3930,8 @@ function TenantsView({ tenants, setTenants }: {
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [idDocumentPreview, setIdDocumentPreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -3938,6 +3940,7 @@ function TenantsView({ tenants, setTenants }: {
     address: '',
     idType: '',
     idNumber: '',
+    idDocumentUrl: '',
     emergencyContact: '',
     emergencyPhone: '',
   });
@@ -3947,6 +3950,52 @@ function TenantsView({ tenants, setTenants }: {
     t.phone.includes(searchQuery) ||
     (t.email || t.user?.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Handle file upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Error', description: 'Please upload an image file', variant: 'destructive' });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Error', description: 'File size must be less than 5MB', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        setIdDocumentPreview(base64);
+
+        // Upload to server
+        try {
+          const result = await api<{ success: boolean; url: string }>('/upload', {
+            method: 'POST',
+            body: JSON.stringify({
+              file: base64,
+              fileName: `id_${Date.now()}`,
+            }),
+          });
+          setFormData(prev => ({ ...prev, idDocumentUrl: result.url }));
+          toast({ title: 'Success', description: 'ID document uploaded successfully' });
+        } catch (err) {
+          toast({ title: 'Error', description: 'Failed to upload document', variant: 'destructive' });
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4001,9 +4050,11 @@ function TenantsView({ tenants, setTenants }: {
       address: '',
       idType: '',
       idNumber: '',
+      idDocumentUrl: '',
       emergencyContact: '',
       emergencyPhone: '',
     });
+    setIdDocumentPreview(null);
   };
 
   const openEditDialog = (tenant: Tenant) => {
@@ -4016,9 +4067,11 @@ function TenantsView({ tenants, setTenants }: {
       address: tenant.address || '',
       idType: tenant.idType || '',
       idNumber: tenant.idNumber || '',
+      idDocumentUrl: tenant.idDocumentUrl || '',
       emergencyContact: tenant.emergencyContact || '',
       emergencyPhone: tenant.emergencyPhone || '',
     });
+    setIdDocumentPreview(tenant.idDocumentUrl || null);
     setIsEditDialogOpen(true);
   };
 
@@ -4101,6 +4154,62 @@ function TenantsView({ tenants, setTenants }: {
                     <Input value={formData.idNumber} onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })} className="border-violet-500/20" />
                   </div>
                 </div>
+                
+                {/* ID Document Upload */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Upload className="h-4 w-4" />
+                    ID Document (Passport/National ID)
+                  </Label>
+                  <div className="border-2 border-dashed border-violet-300/50 rounded-lg p-4 hover:border-violet-400 transition-colors">
+                    {idDocumentPreview ? (
+                      <div className="space-y-3">
+                        <div className="relative w-full h-40 rounded-lg overflow-hidden bg-muted">
+                          <img 
+                            src={idDocumentPreview} 
+                            alt="ID Document Preview" 
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-green-600 flex items-center gap-1">
+                            <Check className="h-3 w-3" />
+                            Document uploaded
+                          </span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setIdDocumentPreview(null);
+                              setFormData({ ...formData, idDocumentUrl: '' });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center cursor-pointer py-4">
+                        <Upload className="h-8 w-8 text-violet-400 mb-2" />
+                        <span className="text-sm text-muted-foreground">
+                          {isUploading ? 'Uploading...' : 'Click to upload ID document'}
+                        </span>
+                        <span className="text-xs text-muted-foreground mt-1">
+                          PNG, JPG up to 5MB
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                          disabled={isUploading}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Emergency Contact</Label>
@@ -4381,6 +4490,24 @@ function TenantsView({ tenants, setTenants }: {
                   <p className="font-semibold">{selectedTenant.address || 'Not set'}</p>
                 </div>
               </div>
+              
+              {/* ID Document Viewer */}
+              {selectedTenant.idDocumentUrl && (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+                    <FileCheck className="h-4 w-4" />
+                    ID Document
+                  </p>
+                  <div className="rounded-lg overflow-hidden border border-border/50 bg-muted/30">
+                    <img 
+                      src={selectedTenant.idDocumentUrl} 
+                      alt="ID Document" 
+                      className="w-full h-auto max-h-64 object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+              
               <div className="p-4 rounded-lg bg-muted/50">
                 <p className="text-sm text-muted-foreground">Emergency Contact</p>
                 <p className="font-semibold">{selectedTenant.emergencyContact ? `${selectedTenant.emergencyContact} (${selectedTenant.emergencyPhone || 'No phone'})` : 'Not set'}</p>
@@ -4437,6 +4564,62 @@ function TenantsView({ tenants, setTenants }: {
                   <Input value={formData.idNumber} onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })} className="border-violet-500/20" />
                 </div>
               </div>
+              
+              {/* ID Document Upload in Edit */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  ID Document (Passport/National ID)
+                </Label>
+                <div className="border-2 border-dashed border-violet-300/50 rounded-lg p-4 hover:border-violet-400 transition-colors">
+                  {idDocumentPreview ? (
+                    <div className="space-y-3">
+                      <div className="relative w-full h-40 rounded-lg overflow-hidden bg-muted">
+                        <img 
+                          src={idDocumentPreview} 
+                          alt="ID Document Preview" 
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-green-600 flex items-center gap-1">
+                          <Check className="h-3 w-3" />
+                          Document uploaded
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setIdDocumentPreview(null);
+                            setFormData({ ...formData, idDocumentUrl: '' });
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center cursor-pointer py-4">
+                      <Upload className="h-8 w-8 text-violet-400 mb-2" />
+                      <span className="text-sm text-muted-foreground">
+                        {isUploading ? 'Uploading...' : 'Click to upload ID document'}
+                      </span>
+                      <span className="text-xs text-muted-foreground mt-1">
+                        PNG, JPG up to 5MB
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                        disabled={isUploading}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+              
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Emergency Contact</Label>
