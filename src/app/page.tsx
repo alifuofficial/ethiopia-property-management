@@ -4212,8 +4212,22 @@ function TenantsView({ tenants, setTenants }: {
       emergencyContact: tenant.emergencyContact || '',
       emergencyPhone: tenant.emergencyPhone || '',
     });
-    setIdDocumentPreview(tenant.idDocumentUrl || null);
+    // Convert URL for preview display
+    setIdDocumentPreview(getImageUrl(tenant.idDocumentUrl));
     setIsEditDialogOpen(true);
+  };
+
+  // Helper to get displayable image URL (convert old format to new API format)
+  const getImageUrl = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    // If it's already an API URL or data URL, return as is
+    if (url.startsWith('/api/') || url.startsWith('data:')) return url;
+    // If it's an old format URL (/uploads/documents/filename.jpg), convert to API format
+    if (url.startsWith('/uploads/documents/')) {
+      const filename = url.replace('/uploads/documents/', '');
+      return `/api/serve?file=${filename}`;
+    }
+    return url;
   };
 
   const getIdTypeLabel = (type: string | null) => {
@@ -4633,7 +4647,7 @@ function TenantsView({ tenants, setTenants }: {
               </div>
               
               {/* ID Document Viewer */}
-              {selectedTenant.idDocumentUrl && (
+              {getImageUrl(selectedTenant.idDocumentUrl) ? (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground flex items-center gap-2">
                     <FileCheck className="h-4 w-4" />
@@ -4641,11 +4655,25 @@ function TenantsView({ tenants, setTenants }: {
                   </p>
                   <div className="rounded-lg overflow-hidden border border-border/50 bg-muted/30">
                     <img 
-                      src={selectedTenant.idDocumentUrl} 
+                      src={getImageUrl(selectedTenant.idDocumentUrl) || ''} 
                       alt="ID Document" 
                       className="w-full h-auto max-h-64 object-contain"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        target.nextElementSibling?.classList.remove('hidden');
+                      }}
                     />
+                    <div className="hidden p-8 text-center">
+                      <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">Could not load image</p>
+                    </div>
                   </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-lg bg-muted/30 border border-dashed border-border/50 text-center">
+                  <FileText className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">No ID document uploaded</p>
                 </div>
               )}
               

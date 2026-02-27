@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(base64Data, 'base64');
     await writeFile(filePath, buffer);
 
-    // Return the public URL
-    const publicUrl = `/uploads/documents/${uniqueFileName}`;
+    // Return the public URL (use serve API for reliable access)
+    const publicUrl = `/api/serve?file=${uniqueFileName}`;
 
     // If tenantId provided, update tenant record
     if (tenantId) {
