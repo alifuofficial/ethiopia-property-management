@@ -2994,7 +2994,13 @@ function UnitsView({ units, setUnits, properties }: {
   properties: Property[];
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [formData, setFormData] = useState({
     propertyId: '',
     unitNumber: '',
@@ -3007,9 +3013,25 @@ function UnitsView({ units, setUnits, properties }: {
     status: 'available',
   });
 
-  const filteredUnits = selectedProperty === 'all' 
-    ? units 
-    : units.filter(u => u.propertyId === selectedProperty);
+  // Stats calculation
+  const stats = {
+    total: units.length,
+    available: units.filter(u => u.status === 'available').length,
+    occupied: units.filter(u => u.status === 'occupied').length,
+    maintenance: units.filter(u => u.status === 'maintenance').length,
+    totalRent: units.reduce((sum, u) => sum + u.monthlyRent, 0),
+    avgRent: units.length > 0 ? Math.round(units.reduce((sum, u) => sum + u.monthlyRent, 0) / units.length) : 0,
+  };
+
+  // Filtered units
+  const filteredUnits = units.filter(unit => {
+    const matchesProperty = selectedProperty === 'all' || unit.propertyId === selectedProperty;
+    const matchesStatus = statusFilter === 'all' || unit.status === statusFilter;
+    const matchesSearch = 
+      unit.unitNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      unit.property?.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesProperty && matchesStatus && matchesSearch;
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3028,8 +3050,44 @@ function UnitsView({ units, setUnits, properties }: {
       setUnits([...units, newUnit]);
       setIsDialogOpen(false);
       resetForm();
+      toast({ title: 'Success', description: 'Unit created successfully' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create unit', variant: 'destructive' });
+    }
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUnit) return;
+    try {
+      const updated = await api<Unit>(`/units/${selectedUnit.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...formData,
+          floor: formData.floor ? parseInt(formData.floor) : null,
+          bedrooms: parseInt(formData.bedrooms),
+          bathrooms: parseInt(formData.bathrooms),
+          area: formData.area ? parseFloat(formData.area) : null,
+          monthlyRent: parseFloat(formData.monthlyRent),
+        }),
+      });
+      setUnits(units.map(u => u.id === selectedUnit.id ? updated : u));
+      setIsEditDialogOpen(false);
+      setSelectedUnit(null);
+      resetForm();
+      toast({ title: 'Success', description: 'Unit updated successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update unit', variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await api(`/units/${id}`, { method: 'DELETE' });
+      setUnits(units.filter(u => u.id !== id));
+      toast({ title: 'Success', description: 'Unit deleted successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to delete unit', variant: 'destructive' });
     }
   };
 
@@ -3047,113 +3105,610 @@ function UnitsView({ units, setUnits, properties }: {
     });
   };
 
+  const openEditDialog = (unit: Unit) => {
+    setSelectedUnit(unit);
+    setFormData({
+      propertyId: unit.propertyId,
+      unitNumber: unit.unitNumber,
+      floor: unit.floor?.toString() || '',
+      bedrooms: unit.bedrooms.toString(),
+      bathrooms: unit.bathrooms.toString(),
+      area: unit.area?.toString() || '',
+      monthlyRent: unit.monthlyRent.toString(),
+      description: unit.description || '',
+      status: unit.status,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const openDetailDialog = (unit: Unit) => {
+    setSelectedUnit(unit);
+    setIsDetailDialogOpen(true);
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
+      available: { bg: 'bg-green-500/10', text: 'text-green-600', icon: <Check className="h-3 w-3" /> },
+      occupied: { bg: 'bg-primary/10', text: 'text-primary', icon: <Home className="h-3 w-3" /> },
+      maintenance: { bg: 'bg-amber-500/10', text: 'text-amber-600', icon: <AlertTriangle className="h-3 w-3" /> },
+    };
+    const style = styles[status] || styles.available;
+    return (
+      <Badge className={`${style.bg} ${style.text} border-0 flex items-center gap-1`}>
+        {style.icon}
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </Badge>
+    );
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Units</h1>
-        <div className="flex items-center gap-4">
-          <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Filter by property" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Properties</SelectItem>
-              {properties.map(p => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Header with gradient */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-emerald-500/5 to-teal-500/5 p-6 border border-primary/10">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary via-emerald-500 to-teal-500 bg-clip-text text-transparent">Property Units</h1>
+            <p className="text-muted-foreground mt-1">Manage units across all your properties</p>
+          </div>
           <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
             <DialogTrigger asChild>
-              <Button><Plus className="mr-2 h-4 w-4" /> Add Unit</Button>
+              <Button className="bg-gradient-to-r from-primary to-emerald-500 hover:from-primary/90 hover:to-emerald-500/90 shadow-lg shadow-primary/20">
+                <Plus className="mr-2 h-4 w-4" /> Add Unit
+              </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>Add New Unit</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <DoorOpen className="h-5 w-5 text-primary" />
+                  Add New Unit
+                </DialogTitle>
+                <DialogDescription>Create a new unit in a property</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Property</Label>
+                  <Label className="text-sm font-medium">Property</Label>
                   <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select property" /></SelectTrigger>
+                    <SelectTrigger className="border-primary/20"><SelectValue placeholder="Select property" /></SelectTrigger>
                     <SelectContent>
                       {properties.map(p => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        <SelectItem key={p.id} value={p.id}>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-primary" />
+                            {p.name}
+                            <span className="text-xs text-muted-foreground">({p.city})</span>
+                          </div>
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Unit Number</Label>
-                    <Input value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} required />
+                    <Label className="text-sm font-medium">Unit Number</Label>
+                    <Input value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} placeholder="A-101" required className="border-primary/20" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Floor</Label>
-                    <Input type="number" value={formData.floor} onChange={(e) => setFormData({ ...formData, floor: e.target.value })} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Bedrooms</Label>
-                    <Input type="number" value={formData.bedrooms} onChange={(e) => setFormData({ ...formData, bedrooms: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bathrooms</Label>
-                    <Input type="number" value={formData.bathrooms} onChange={(e) => setFormData({ ...formData, bathrooms: e.target.value })} />
+                    <Label className="text-sm font-medium">Floor</Label>
+                    <Input type="number" value={formData.floor} onChange={(e) => setFormData({ ...formData, floor: e.target.value })} placeholder="1" className="border-primary/20" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Area (sqm)</Label>
-                    <Input type="number" value={formData.area} onChange={(e) => setFormData({ ...formData, area: e.target.value })} />
+                    <Label className="text-sm font-medium">Bedrooms</Label>
+                    <Select value={formData.bedrooms} onValueChange={(v) => setFormData({ ...formData, bedrooms: v })}>
+                      <SelectTrigger className="border-primary/20"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {[0, 1, 2, 3, 4, 5].map(n => (
+                          <SelectItem key={n} value={n.toString()}>{n === 0 ? 'Studio' : n}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Monthly Rent (ETB)</Label>
-                    <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required />
+                    <Label className="text-sm font-medium">Bathrooms</Label>
+                    <Select value={formData.bathrooms} onValueChange={(v) => setFormData({ ...formData, bathrooms: v })}>
+                      <SelectTrigger className="border-primary/20"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 4].map(n => (
+                          <SelectItem key={n} value={n.toString()}>{n}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Area (sqm)</Label>
+                    <Input type="number" value={formData.area} onChange={(e) => setFormData({ ...formData, area: e.target.value })} placeholder="120" className="border-primary/20" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Monthly Rent (ETB)</Label>
+                    <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} placeholder="15000" required className="border-primary/20" />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+                  <Label className="text-sm font-medium">Status</Label>
+                  <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                    <SelectTrigger className="border-primary/20"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="available">Available</SelectItem>
+                      <SelectItem value="occupied">Occupied</SelectItem>
+                      <SelectItem value="maintenance">Under Maintenance</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <DialogFooter>
-                  <Button type="submit">Create Unit</Button>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Description</Label>
+                  <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Unit features, amenities..." className="border-primary/20" />
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+                  <Button type="submit" className="bg-gradient-to-r from-primary to-emerald-500">Create Unit</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
         </div>
+        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Unit</TableHead>
-              <TableHead>Property</TableHead>
-              <TableHead>Beds/Baths</TableHead>
-              <TableHead>Rent (ETB)</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredUnits.map((unit) => (
-              <TableRow key={unit.id}>
-                <TableCell className="font-medium">{unit.unitNumber}</TableCell>
-                <TableCell>{unit.property?.name}</TableCell>
-                <TableCell>{unit.bedrooms} / {unit.bathrooms}</TableCell>
-                <TableCell>{unit.monthlyRent.toLocaleString()}</TableCell>
-                <TableCell>
-                  <Badge variant={unit.status === 'available' ? 'default' : unit.status === 'occupied' ? 'secondary' : 'destructive'}>
-                    {unit.status}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Card className="group bg-gradient-to-br from-primary/10 to-emerald-500/5 border-primary/20 hover:shadow-lg transition-all">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                <DoorOpen className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-primary">{stats.total}</p>
+                <p className="text-xs text-muted-foreground">Total Units</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter(statusFilter === 'available' ? 'all' : 'available')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-500/10 group-hover:bg-green-500/20 transition-colors">
+                <Check className="h-4 w-4 text-green-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-green-600">{stats.available}</p>
+                <p className="text-xs text-muted-foreground">Available</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-teal-500/10 to-teal-500/5 border-teal-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter(statusFilter === 'occupied' ? 'all' : 'occupied')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
+                <Home className="h-4 w-4 text-teal-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-teal-600">{stats.occupied}</p>
+                <p className="text-xs text-muted-foreground">Occupied</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20 hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter(statusFilter === 'maintenance' ? 'all' : 'maintenance')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-amber-600">{stats.maintenance}</p>
+                <p className="text-xs text-muted-foreground">Maintenance</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/20 hover:shadow-lg transition-all">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/10 group-hover:bg-purple-500/20 transition-colors">
+                <DollarSign className="h-4 w-4 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-xl font-bold text-purple-600">{(stats.totalRent / 1000).toFixed(0)}K</p>
+                <p className="text-xs text-muted-foreground">Total Rent</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="group bg-gradient-to-br from-rose-500/10 to-rose-500/5 border-rose-500/20 hover:shadow-lg transition-all">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-rose-500/10 group-hover:bg-rose-500/20 transition-colors">
+                <TrendingUp className="h-4 w-4 text-rose-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-rose-600">{stats.avgRent.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Avg Rent</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card className="border-border/50 shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Input
+                placeholder="Search by unit number or property..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 border-primary/20 focus:border-primary"
+              />
+              <DoorOpen className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
+            <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+              <SelectTrigger className="w-full sm:w-48 border-primary/20">
+                <SelectValue placeholder="All Properties" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Properties</SelectItem>
+                {properties.map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-40 border-primary/20">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="available">Available</SelectItem>
+                <SelectItem value="occupied">Occupied</SelectItem>
+                <SelectItem value="maintenance">Maintenance</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className={viewMode === 'grid' ? 'bg-primary text-primary-foreground shadow-sm' : ''}
+              >
+                <Building2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('table')}
+                className={viewMode === 'table' ? 'bg-primary text-primary-foreground shadow-sm' : ''}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
       </Card>
+
+      {/* View Display */}
+      {viewMode === 'grid' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredUnits.map((unit) => (
+            <Card key={unit.id} className="group hover:shadow-xl transition-all duration-300 border-border/50 overflow-hidden">
+              <div className="p-5">
+                {/* Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-emerald-500/10">
+                      <DoorOpen className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg">{unit.unitNumber}</h3>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Building2 className="h-3 w-3" />
+                        {unit.property?.name}
+                      </div>
+                    </div>
+                  </div>
+                  {getStatusBadge(unit.status)}
+                </div>
+
+                {/* Details */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="text-center p-2 rounded-lg bg-muted/50">
+                    <p className="text-lg font-bold text-primary">{unit.bedrooms === 0 ? 'S' : unit.bedrooms}</p>
+                    <p className="text-xs text-muted-foreground">Beds</p>
+                  </div>
+                  <div className="text-center p-2 rounded-lg bg-muted/50">
+                    <p className="text-lg font-bold text-teal-600">{unit.bathrooms}</p>
+                    <p className="text-xs text-muted-foreground">Baths</p>
+                  </div>
+                  <div className="text-center p-2 rounded-lg bg-muted/50">
+                    <p className="text-lg font-bold text-purple-600">{unit.area || '-'}</p>
+                    <p className="text-xs text-muted-foreground">sqm</p>
+                  </div>
+                </div>
+
+                {/* Floor & Rent */}
+                <div className="flex items-center justify-between mb-4 p-3 rounded-lg bg-gradient-to-r from-primary/5 to-emerald-500/5 border border-primary/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Floor</span>
+                    <Badge variant="outline" className="border-primary/20 text-primary">{unit.floor || 'G'}</Badge>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Monthly Rent</p>
+                    <p className="text-lg font-bold text-primary">{unit.monthlyRent.toLocaleString()} <span className="text-xs font-normal">ETB</span></p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button variant="outline" size="sm" className="flex-1 border-primary/20 text-primary hover:bg-primary/5" onClick={() => openDetailDialog(unit)}>
+                    <Eye className="h-4 w-4 mr-1" /> View
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1 border-teal-500/20 text-teal-600 hover:bg-teal-50" onClick={() => openEditDialog(unit)}>
+                    <Edit className="h-4 w-4 mr-1" /> Edit
+                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="border-destructive/20 text-destructive hover:bg-destructive/10">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Unit?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete unit {unit.unitNumber}. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDelete(unit.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+            </Card>
+          ))}
+          {filteredUnits.length === 0 && (
+            <div className="col-span-full text-center py-12">
+              <DoorOpen className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">No units found matching your criteria</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <Card className="border-border/50 shadow-sm">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Unit</TableHead>
+                <TableHead>Property</TableHead>
+                <TableHead>Floor</TableHead>
+                <TableHead>Beds/Baths</TableHead>
+                <TableHead>Area</TableHead>
+                <TableHead>Rent (ETB)</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredUnits.map((unit) => (
+                <TableRow key={unit.id} className="group">
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-primary/10">
+                        <DoorOpen className="h-4 w-4 text-primary" />
+                      </div>
+                      <span className="font-semibold">{unit.unitNumber}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{unit.property?.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="border-primary/20">{unit.floor || 'G'}</Badge>
+                  </TableCell>
+                  <TableCell>{unit.bedrooms === 0 ? 'Studio' : unit.bedrooms} / {unit.bathrooms}</TableCell>
+                  <TableCell>{unit.area ? `${unit.area} sqm` : '-'}</TableCell>
+                  <TableCell className="font-medium">{unit.monthlyRent.toLocaleString()}</TableCell>
+                  <TableCell>{getStatusBadge(unit.status)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={() => openDetailDialog(unit)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-teal-50 hover:text-teal-600" onClick={() => openEditDialog(unit)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Unit?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete unit {unit.unitNumber}.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(unit.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredUnits.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-12">
+                    <DoorOpen className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">No units found</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setSelectedUnit(null); resetForm(); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5 text-teal-600" />
+              Edit Unit
+            </DialogTitle>
+            <DialogDescription>Update unit information</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEdit} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Property</Label>
+              <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v })}>
+                <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {properties.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Unit Number</Label>
+                <Input value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} required className="border-teal-500/20" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Floor</Label>
+                <Input type="number" value={formData.floor} onChange={(e) => setFormData({ ...formData, floor: e.target.value })} className="border-teal-500/20" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Bedrooms</Label>
+                <Select value={formData.bedrooms} onValueChange={(v) => setFormData({ ...formData, bedrooms: v })}>
+                  <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[0, 1, 2, 3, 4, 5].map(n => (
+                      <SelectItem key={n} value={n.toString()}>{n === 0 ? 'Studio' : n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Bathrooms</Label>
+                <Select value={formData.bathrooms} onValueChange={(v) => setFormData({ ...formData, bathrooms: v })}>
+                  <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4].map(n => (
+                      <SelectItem key={n} value={n.toString()}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Area (sqm)</Label>
+                <Input type="number" value={formData.area} onChange={(e) => setFormData({ ...formData, area: e.target.value })} className="border-teal-500/20" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Monthly Rent (ETB)</Label>
+                <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-teal-500/20" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Status</Label>
+              <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                <SelectTrigger className="border-teal-500/20"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">Available</SelectItem>
+                  <SelectItem value="occupied">Occupied</SelectItem>
+                  <SelectItem value="maintenance">Under Maintenance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Description</Label>
+              <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="border-teal-500/20" />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedUnit(null); resetForm(); }}>Cancel</Button>
+              <Button type="submit" className="bg-gradient-to-r from-teal-500 to-teal-600">Update Unit</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DoorOpen className="h-5 w-5 text-primary" />
+              Unit Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedUnit && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-primary/10 to-emerald-500/5 border border-primary/10">
+                <div>
+                  <h3 className="text-2xl font-bold">{selectedUnit.unitNumber}</h3>
+                  <p className="text-muted-foreground">{selectedUnit.property?.name}</p>
+                </div>
+                {getStatusBadge(selectedUnit.status)}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Floor</p>
+                  <p className="text-xl font-semibold">{selectedUnit.floor || 'Ground'}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Bedrooms</p>
+                  <p className="text-xl font-semibold">{selectedUnit.bedrooms === 0 ? 'Studio' : selectedUnit.bedrooms}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Bathrooms</p>
+                  <p className="text-xl font-semibold">{selectedUnit.bathrooms}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Area</p>
+                  <p className="text-xl font-semibold">{selectedUnit.area ? `${selectedUnit.area} sqm` : '-'}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg bg-gradient-to-r from-primary/5 to-emerald-500/5 border border-primary/10">
+                <p className="text-sm text-muted-foreground mb-1">Monthly Rent</p>
+                <p className="text-3xl font-bold text-primary">{selectedUnit.monthlyRent.toLocaleString()} <span className="text-sm font-normal text-muted-foreground">ETB</span></p>
+              </div>
+
+              {selectedUnit.description && (
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground mb-1">Description</p>
+                  <p className="text-sm">{selectedUnit.description}</p>
+                </div>
+              )}
+
+              <div className="text-xs text-muted-foreground text-center">
+                Created: {new Date(selectedUnit.createdAt).toLocaleDateString()}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
