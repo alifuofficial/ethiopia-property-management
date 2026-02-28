@@ -1068,38 +1068,34 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
           </div>
         </div>
         <CardContent className="p-6">
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData.length > 0 ? revenueData : [{ month: 'No Data', revenue: 0, expenses: 0 }]}>
-                <defs>
-                  <linearGradient id="colorRevenueMain" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#9ca3af" fontSize={12} tickFormatter={(v) => `${v/1000}k`} tickLine={false} axisLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: 'none',
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                  }}
-                  formatter={(value: number) => [`${value.toLocaleString()} ETB`, 'Revenue']}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#10b981"
-                  strokeWidth={3}
-                  fillOpacity={1}
-                  fill="url(#colorRevenueMain)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+          {/* Simple Bar Chart Visualization */}
+          <div className="space-y-4">
+            {(revenueData.length > 0 ? revenueData : [{ month: 'No Data', revenue: 0, expenses: 0 }]).map((item, index) => {
+              const maxRevenue = Math.max(...(revenueData.length > 0 ? revenueData.map(d => d.revenue) : [1]), 1);
+              const percentage = (item.revenue / maxRevenue) * 100;
+              return (
+                <div key={index} className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-muted-foreground">{item.month}</span>
+                    <span className="font-semibold text-emerald-600">{item.revenue > 0 ? `${item.revenue.toLocaleString()} ETB` : '-'}</span>
+                  </div>
+                  <div className="w-full bg-emerald-100 dark:bg-emerald-900/30 rounded-full h-4 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                      style={{ width: `${item.revenue > 0 ? Math.max(percentage, 5) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          {revenueData.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p>No revenue data available yet</p>
+              <p className="text-sm">Data will appear as payments are approved</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
