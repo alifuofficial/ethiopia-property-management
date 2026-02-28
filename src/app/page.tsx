@@ -4292,6 +4292,7 @@ function TenantsView({ tenants, setTenants }: {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [idDocumentPreview, setIdDocumentPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [enablePortalAccess, setEnablePortalAccess] = useState(true);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -4360,10 +4361,20 @@ function TenantsView({ tenants, setTenants }: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate email/password if portal access is enabled
+    if (enablePortalAccess && (!formData.email || !formData.password)) {
+      toast({ title: 'Error', description: 'Email and password are required when portal access is enabled', variant: 'destructive' });
+      return;
+    }
+    
     try {
       const newTenant = await api<Tenant>('/tenants', {
         method: 'POST',
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          enablePortalAccess,
+        }),
       });
       setTenants([...tenants, newTenant]);
       setIsDialogOpen(false);
@@ -4420,6 +4431,7 @@ function TenantsView({ tenants, setTenants }: {
       emergencyPhone: '',
     });
     setIdDocumentPreview(null);
+    setEnablePortalAccess(true);
   };
 
   const openEditDialog = (tenant: Tenant) => {
@@ -4502,16 +4514,50 @@ function TenantsView({ tenants, setTenants }: {
                     <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required className="border-violet-500/20" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Email *</Label>
-                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required className="border-violet-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Password *</Label>
-                    <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required className="border-violet-500/20" />
+                
+                {/* Portal Access Toggle */}
+                <div className="flex items-center gap-3 p-4 bg-violet-50 rounded-lg border border-violet-200">
+                  <Switch
+                    id="enablePortalAccess"
+                    checked={enablePortalAccess}
+                    onCheckedChange={setEnablePortalAccess}
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="enablePortalAccess" className="flex items-center gap-2 cursor-pointer font-medium">
+                      <KeyRound className="h-4 w-4 text-violet-600" />
+                      Enable Self-Service Portal Access
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {enablePortalAccess 
+                        ? 'Tenant will receive login credentials to access their portal' 
+                        : 'Tenant record only - no login access to the system'}
+                    </p>
                   </div>
                 </div>
+                
+                {/* Email & Password - Only required when portal access is enabled */}
+                {enablePortalAccess && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Email *</Label>
+                      <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required={enablePortalAccess} className="border-violet-500/20" placeholder="tenant@example.com" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Password *</Label>
+                      <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required={enablePortalAccess} className="border-violet-500/20" placeholder="Min 6 characters" />
+                    </div>
+                  </div>
+                )}
+                
+                {/* Email field for contact purposes when portal access is disabled */}
+                {!enablePortalAccess && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Email (Optional)</Label>
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="border-violet-500/20" placeholder="tenant@example.com" />
+                    <p className="text-xs text-muted-foreground">For contact purposes only - no login access</p>
+                  </div>
+                )}
+                
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Address</Label>
                   <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="border-violet-500/20" />
@@ -5065,9 +5111,25 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  
+  // Multi-step form state
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   // Calendar type for date pickers
   const [startCalendarType, setStartCalendarType] = useState<'gregorian' | 'ethiopian'>('gregorian');
   const [endCalendarType, setEndCalendarType] = useState<'gregorian' | 'ethiopian'>('gregorian');
+  
+  // File upload states
+  const [isUploadingAgreement, setIsUploadingAgreement] = useState(false);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+  const [legalAgreementPreview, setLegalAgreementPreview] = useState<string | null>(null);
+  const [paymentReceiptPreview, setPaymentReceiptPreview] = useState<string | null>(null);
+  
+  // Payment type selection
+  const [paymentType, setPaymentType] = useState<'one_month' | 'advance'>('one_month');
+  const [advanceMonths, setAdvanceMonths] = useState(1);
+  
   const [formData, setFormData] = useState({
     tenantId: '',
     propertyId: '',
@@ -5079,7 +5141,9 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
     advancePayment: '0',
     notes: '',
     legalAgreementUrl: '',
+    paymentReceiptUrl: '',
   });
+  
   const [terminateData, setTerminateData] = useState({
     reason: '',
     bankAccountNumber: '',
@@ -5089,6 +5153,26 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
 
   const availableUnits = units.filter(u => u.propertyId === formData.propertyId && u.status === 'available');
 
+  // Calculate max advance months from contract duration
+  const calculateMaxAdvanceMonths = () => {
+    if (!formData.startDate || !formData.endDate) return 1;
+    const start = new Date(formData.startDate);
+    const end = new Date(formData.endDate);
+    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    return Math.max(1, months);
+  };
+
+  const maxAdvanceMonths = calculateMaxAdvanceMonths();
+
+  // Calculate advance payment amount based on months selected
+  const calculateAdvancePayment = () => {
+    const monthlyRent = parseFloat(formData.monthlyRent) || 0;
+    if (paymentType === 'one_month') {
+      return monthlyRent;
+    }
+    return monthlyRent * advanceMonths;
+  };
+
   const filteredContracts = contracts.filter(c => {
     const matchesSearch = 
       (c.tenant?.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -5097,8 +5181,98 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
     return matchesSearch && matchesStatus;
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle file upload
+  const handleFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>, 
+    type: 'agreement' | 'receipt',
+    setPreview: (preview: string | null) => void,
+    setIsUploading: (uploading: boolean) => void,
+    setUrl: (url: string) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      toast({ title: 'Error', description: 'Please upload an image or PDF file', variant: 'destructive' });
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: 'Error', description: 'File size must be less than 10MB', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result as string;
+      setPreview(base64);
+
+      try {
+        const result = await api<{ success: boolean; url: string }>('/upload', {
+          method: 'POST',
+          body: JSON.stringify({
+            file: base64,
+            fileName: `${type}_${Date.now()}`,
+          }),
+        });
+        setUrl(result.url);
+        toast({ title: 'Success', description: 'File uploaded successfully' });
+      } catch (err) {
+        toast({ title: 'Error', description: 'Failed to upload file', variant: 'destructive' });
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Validate each step
+  const validateStep = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        return !!(formData.tenantId && formData.propertyId && formData.unitIds.length > 0);
+      case 2:
+        return !!(formData.startDate && formData.endDate && formData.monthlyRent);
+      case 3:
+        return !!formData.legalAgreementUrl;
+      case 4:
+        return true; // Payment step is optional
+      case 5:
+        return true; // Review step
+      default:
+        return false;
+    }
+  };
+
+  const handleNextStep = () => {
+    if (validateStep(currentStep)) {
+      // Calculate advance payment when moving to review step
+      if (currentStep === 4) {
+        setFormData(prev => ({
+          ...prev,
+          advancePayment: calculateAdvancePayment().toString(),
+        }));
+      }
+      setCurrentStep(prev => Math.min(prev + 1, 5));
+    } else {
+      toast({ title: 'Validation Error', description: 'Please fill in all required fields', variant: 'destructive' });
+    }
+  };
+
+  const handlePrevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleSubmit = async () => {
+    if (!validateStep(1) || !validateStep(2) || !validateStep(3)) {
+      toast({ title: 'Error', description: 'Please complete all required steps', variant: 'destructive' });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       const newContract = await api<Contract>('/contracts', {
         method: 'POST',
@@ -5106,15 +5280,17 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
           ...formData,
           monthlyRent: parseFloat(formData.monthlyRent),
           securityDeposit: parseFloat(formData.securityDeposit),
-          advancePayment: parseFloat(formData.advancePayment),
+          advancePayment: calculateAdvancePayment(),
         }),
       });
       setContracts([...contracts, newContract]);
       setIsDialogOpen(false);
       resetForm();
-      toast({ title: 'Success', description: 'Contract created successfully' });
+      toast({ title: 'Success', description: 'Contract created successfully. It is now under review for payment verification.' });
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to create contract', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -5147,7 +5323,16 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
       advancePayment: '0',
       notes: '',
       legalAgreementUrl: '',
+      paymentReceiptUrl: '',
     });
+    setCurrentStep(1);
+    setPaymentType('one_month');
+    setAdvanceMonths(1);
+    setLegalAgreementPreview(null);
+    setPaymentReceiptPreview(null);
+    // Reset calendar types to default
+    setStartCalendarType('gregorian');
+    setEndCalendarType('gregorian');
   };
 
   const getStatusBadge = (status: string) => {
@@ -5192,106 +5377,391 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
               <Plus className="mr-2 h-4 w-4" /> New Contract
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
             <DialogHeader className="p-6 pb-0">
               <DialogTitle className="flex items-center gap-2">
                 <FileCheck className="h-5 w-5 text-emerald-600" />
                 Create New Contract
               </DialogTitle>
-              <DialogDescription>Set up a new rental contract</DialogDescription>
+              <DialogDescription>Step {currentStep} of 5 - {['Tenant & Property', 'Dates & Rent', 'Legal Agreement', 'Payment', 'Review'][currentStep - 1]}</DialogDescription>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(85vh-180px)]">
-              <form id="contract-form" onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Tenant *</Label>
-                  <Select value={formData.tenantId} onValueChange={(v) => setFormData({ ...formData, tenantId: v })}>
-                    <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select tenant" /></SelectTrigger>
-                    <SelectContent>
-                      {tenants.map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Property *</Label>
-                  <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v, unitIds: [] })}>
-                    <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select property" /></SelectTrigger>
-                    <SelectContent>
-                      {properties.map(p => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Units</Label>
-                  <div className="border border-emerald-200 rounded-lg p-3 max-h-32 overflow-y-auto bg-emerald-50/30">
-                    {availableUnits.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No available units</p>
-                    ) : (
-                      availableUnits.map(u => (
-                        <label key={u.id} className="flex items-center gap-2 p-1 hover:bg-emerald-100/50 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.unitIds.includes(u.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({ ...formData, unitIds: [...formData.unitIds, u.id], monthlyRent: String(parseFloat(formData.monthlyRent || '0') + u.monthlyRent) });
-                              } else {
-                                setFormData({ ...formData, unitIds: formData.unitIds.filter(id => id !== u.id) });
-                              }
-                            }}
-                            className="rounded border-emerald-300"
-                          />
-                          <span className="text-sm">{u.unitNumber} - {u.monthlyRent.toLocaleString()} ETB/mo</span>
-                        </label>
-                      ))
+            
+            {/* Step Indicator */}
+            <div className="px-6 py-2">
+              <div className="flex items-center justify-between">
+                {[1, 2, 3, 4, 5].map((step) => (
+                  <div key={step} className="flex items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                      step < currentStep ? 'bg-emerald-500 text-white' :
+                      step === currentStep ? 'bg-emerald-100 text-emerald-600 border-2 border-emerald-500' :
+                      'bg-gray-100 text-gray-400'
+                    }`}>
+                      {step < currentStep ? <Check className="h-4 w-4" /> : step}
+                    </div>
+                    {step < 5 && (
+                      <div className={`w-12 h-1 mx-1 ${step < currentStep ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(90vh-280px)]">
+              {/* Step 1: Tenant & Property */}
+              {currentStep === 1 && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Tenant *</Label>
+                    <Select value={formData.tenantId} onValueChange={(v) => setFormData({ ...formData, tenantId: v })}>
+                      <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select tenant" /></SelectTrigger>
+                      <SelectContent>
+                        {tenants.map(t => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.fullName} {t.user ? '(Portal Enabled)' : '(No Portal)'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formData.tenantId && tenants.find(t => t.id === formData.tenantId)?.user && (
+                      <p className="text-xs text-emerald-600 flex items-center gap-1">
+                        <KeyRound className="h-3 w-3" /> Tenant has portal access
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Property *</Label>
+                    <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v, unitIds: [] })}>
+                      <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select property" /></SelectTrigger>
+                      <SelectContent>
+                        {properties.map(p => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Available Units *</Label>
+                    <div className="border border-emerald-200 rounded-lg p-3 max-h-40 overflow-y-auto bg-emerald-50/30">
+                      {availableUnits.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No available units for this property</p>
+                      ) : (
+                        availableUnits.map(u => (
+                          <label key={u.id} className="flex items-center gap-2 p-2 hover:bg-emerald-100/50 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={formData.unitIds.includes(u.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFormData({ ...formData, unitIds: [...formData.unitIds, u.id], monthlyRent: String(parseFloat(formData.monthlyRent || '0') + u.monthlyRent) });
+                                } else {
+                                  setFormData({ ...formData, unitIds: formData.unitIds.filter(id => id !== u.id) });
+                                }
+                              }}
+                              className="rounded border-emerald-300"
+                            />
+                            <span className="text-sm flex-1">{u.unitNumber} - Floor {u.floor}</span>
+                            <span className="text-sm font-medium text-emerald-600">{u.monthlyRent.toLocaleString()} ETB/mo</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    {formData.unitIds.length > 0 && (
+                      <p className="text-sm text-emerald-600 font-medium">Selected: {formData.unitIds.length} unit(s)</p>
                     )}
                   </div>
                 </div>
+              )}
+              
+              {/* Step 2: Dates & Rent */}
+              {currentStep === 2 && (
                 <div className="space-y-4">
-                  <DualCalendarDatePicker
-                    label="Start Date"
-                    value={formData.startDate}
-                    onChange={(date) => setFormData({ ...formData, startDate: date })}
-                    calendarType={startCalendarType}
-                    onCalendarTypeChange={setStartCalendarType}
-                    required
-                  />
-                  <DualCalendarDatePicker
-                    label="End Date"
-                    value={formData.endDate}
-                    onChange={(date) => setFormData({ ...formData, endDate: date })}
-                    calendarType={endCalendarType}
-                    onCalendarTypeChange={setEndCalendarType}
-                    required
-                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <DualCalendarDatePicker
+                      label="Start Date"
+                      value={formData.startDate}
+                      onChange={(date) => setFormData({ ...formData, startDate: date })}
+                      calendarType={startCalendarType}
+                      onCalendarTypeChange={setStartCalendarType}
+                      required
+                    />
+                    <DualCalendarDatePicker
+                      label="End Date"
+                      value={formData.endDate}
+                      onChange={(date) => setFormData({ ...formData, endDate: date })}
+                      calendarType={endCalendarType}
+                      onCalendarTypeChange={setEndCalendarType}
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Monthly Rent (ETB) *</Label>
+                      <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-emerald-500/20" />
+                      <p className="text-xs text-muted-foreground">Auto-calculated from selected units</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Security Deposit (ETB)</Label>
+                      <Input type="number" value={formData.securityDeposit} onChange={(e) => setFormData({ ...formData, securityDeposit: e.target.value })} className="border-emerald-500/20" />
+                    </div>
+                  </div>
+                  {formData.startDate && formData.endDate && (
+                    <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <p className="text-sm text-emerald-700">
+                        Contract Duration: <strong>{maxAdvanceMonths} months</strong>
+                      </p>
+                      <p className="text-xs text-emerald-600 mt-1">Maximum advance payment: {(parseFloat(formData.monthlyRent || '0') * maxAdvanceMonths).toLocaleString()} ETB</p>
+                    </div>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+              )}
+              
+              {/* Step 3: Legal Agreement */}
+              {currentStep === 3 && (
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Monthly Rent (ETB) *</Label>
-                    <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-emerald-500/20" />
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <FileSignature className="h-4 w-4" />
+                      Legal Agreement Document *
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Upload the signed rental agreement between tenant and property owner</p>
+                    <div className="border-2 border-dashed border-emerald-300/50 rounded-lg p-4 hover:border-emerald-400 transition-colors">
+                      {legalAgreementPreview ? (
+                        <div className="space-y-3">
+                          <div className="relative w-full h-48 rounded-lg overflow-hidden bg-muted">
+                            <img src={legalAgreementPreview} alt="Legal Agreement Preview" className="w-full h-full object-contain" />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-green-600 flex items-center gap-1">
+                              <Check className="h-3 w-3" /> Document uploaded
+                            </span>
+                            <Button type="button" variant="outline" size="sm" onClick={() => { setLegalAgreementPreview(null); setFormData({ ...formData, legalAgreementUrl: '' }); }}>
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center cursor-pointer py-8">
+                          <Upload className="h-10 w-10 text-emerald-400 mb-2" />
+                          <span className="text-sm text-muted-foreground">
+                            {isUploadingAgreement ? 'Uploading...' : 'Click to upload legal agreement'}
+                          </span>
+                          <span className="text-xs text-muted-foreground mt-1">Image or PDF, max 10MB</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="hidden"
+                            onChange={(e) => handleFileUpload(e, 'agreement', setLegalAgreementPreview, setIsUploadingAgreement, (url) => setFormData({ ...formData, legalAgreementUrl: url }))}
+                            disabled={isUploadingAgreement}
+                          />
+                        </label>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Security Deposit</Label>
-                    <Input type="number" value={formData.securityDeposit} onChange={(e) => setFormData({ ...formData, securityDeposit: e.target.value })} className="border-emerald-500/20" />
+                    <Label className="text-sm font-medium">Additional Notes</Label>
+                    <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="border-emerald-500/20" placeholder="Any special terms or conditions..." />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Advance Payment (ETB)</Label>
-                  <Input type="number" value={formData.advancePayment} onChange={(e) => setFormData({ ...formData, advancePayment: e.target.value })} className="border-emerald-500/20" />
-                  <p className="text-xs text-muted-foreground">Contract will be under review until payment is approved.</p>
+              )}
+              
+              {/* Step 4: Payment */}
+              {currentStep === 4 && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                    <p className="text-sm text-amber-700 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      Contract will be created with status <strong>UNDER_REVIEW</strong> until payment is verified by accountant.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Payment Type</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { setPaymentType('one_month'); setAdvanceMonths(1); }}
+                        className={`p-4 rounded-lg border-2 text-left transition-all ${paymentType === 'one_month' ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-emerald-300'}`}
+                      >
+                        <div className="font-medium text-emerald-700">One Month</div>
+                        <div className="text-sm text-muted-foreground">{parseFloat(formData.monthlyRent || '0').toLocaleString()} ETB</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentType('advance')}
+                        className={`p-4 rounded-lg border-2 text-left transition-all ${paymentType === 'advance' ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-emerald-300'}`}
+                      >
+                        <div className="font-medium text-emerald-700">Advance Payment</div>
+                        <div className="text-sm text-muted-foreground">Multiple months</div>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {paymentType === 'advance' && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Number of Months (Max: {maxAdvanceMonths})</Label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="range"
+                          min="1"
+                          max={maxAdvanceMonths}
+                          value={advanceMonths}
+                          onChange={(e) => setAdvanceMonths(parseInt(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-lg font-bold text-emerald-600 w-16 text-center">{advanceMonths}</span>
+                      </div>
+                      <p className="text-sm text-emerald-600 font-medium">Total: {calculateAdvancePayment().toLocaleString()} ETB</p>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Receipt className="h-4 w-4" />
+                      Payment Receipt
+                    </Label>
+                    <div className="border-2 border-dashed border-emerald-300/50 rounded-lg p-4 hover:border-emerald-400 transition-colors">
+                      {paymentReceiptPreview ? (
+                        <div className="space-y-3">
+                          <div className="relative w-full h-40 rounded-lg overflow-hidden bg-muted">
+                            <img src={paymentReceiptPreview} alt="Payment Receipt Preview" className="w-full h-full object-contain" />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-green-600 flex items-center gap-1">
+                              <Check className="h-3 w-3" /> Receipt uploaded
+                            </span>
+                            <Button type="button" variant="outline" size="sm" onClick={() => { setPaymentReceiptPreview(null); setFormData({ ...formData, paymentReceiptUrl: '' }); }}>
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center cursor-pointer py-6">
+                          <Upload className="h-8 w-8 text-emerald-400 mb-2" />
+                          <span className="text-sm text-muted-foreground">
+                            {isUploadingReceipt ? 'Uploading...' : 'Click to upload payment receipt'}
+                          </span>
+                          <span className="text-xs text-muted-foreground mt-1">Image or PDF, max 10MB</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="hidden"
+                            onChange={(e) => handleFileUpload(e, 'receipt', setPaymentReceiptPreview, setIsUploadingReceipt, (url) => setFormData({ ...formData, paymentReceiptUrl: url }))}
+                            disabled={isUploadingReceipt}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Notes</Label>
-                  <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="border-emerald-500/20" />
+              )}
+              
+              {/* Step 5: Review */}
+              {currentStep === 5 && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <h3 className="font-semibold text-emerald-700 mb-3">Contract Summary</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tenant:</span>
+                        <span className="font-medium">{tenants.find(t => t.id === formData.tenantId)?.fullName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Property:</span>
+                        <span className="font-medium">{properties.find(p => p.id === formData.propertyId)?.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Units:</span>
+                        <span className="font-medium">{formData.unitIds.length} selected</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Duration:</span>
+                        <span className="font-medium">{formData.startDate} to {formData.endDate} ({maxAdvanceMonths} months)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Monthly Rent:</span>
+                        <span className="font-medium">{parseFloat(formData.monthlyRent || '0').toLocaleString()} ETB</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Security Deposit:</span>
+                        <span className="font-medium">{parseFloat(formData.securityDeposit || '0').toLocaleString()} ETB</span>
+                      </div>
+                      <div className="flex justify-between border-t pt-2 mt-2">
+                        <span className="text-muted-foreground">Payment:</span>
+                        <span className="font-bold text-emerald-600">{calculateAdvancePayment().toLocaleString()} ETB ({paymentType === 'one_month' ? '1 month' : `${advanceMonths} months advance`})</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-gray-50 rounded-lg border">
+                      <p className="text-xs text-muted-foreground mb-1">Legal Agreement</p>
+                      <p className="text-sm font-medium flex items-center gap-1">
+                        {formData.legalAgreementUrl ? (
+                          <>
+                            <Check className="h-4 w-4 text-green-500" />
+                            Uploaded
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-4 w-4 text-red-500" />
+                            Not uploaded
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-lg border">
+                      <p className="text-xs text-muted-foreground mb-1">Payment Receipt</p>
+                      <p className="text-sm font-medium flex items-center gap-1">
+                        {formData.paymentReceiptUrl ? (
+                          <>
+                            <Check className="h-4 w-4 text-green-500" />
+                            Uploaded
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-4 w-4 text-amber-500" />
+                            Not uploaded (optional)
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <p className="text-xs text-amber-700">
+                      After submission, the contract will be sent to the accountant for payment verification. 
+                      Once approved, the contract will become ACTIVE.
+                    </p>
+                  </div>
                 </div>
-              </form>
+              )}
             </div>
-            <DialogFooter className="p-6 pt-0 border-t">
-              <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
-              <Button type="submit" form="contract-form" className="bg-gradient-to-r from-emerald-500 to-teal-600">Create Contract</Button>
+            
+            <DialogFooter className="p-6 pt-0 border-t flex justify-between">
+              <div>
+                {currentStep > 1 && (
+                  <Button type="button" variant="outline" onClick={handlePrevStep}>
+                    <ChevronRight className="h-4 w-4 mr-1 rotate-180" /> Previous
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+                {currentStep < 5 ? (
+                  <Button type="button" className="bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handleNextStep}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                ) : (
+                  <Button 
+                    type="button" 
+                    className="bg-gradient-to-r from-emerald-500 to-teal-600" 
+                    onClick={handleSubmit}
+                    disabled={isSubmitting || !formData.legalAgreementUrl}
+                  >
+                    {isSubmitting ? 'Creating...' : 'Create Contract'}
+                  </Button>
+                )}
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>

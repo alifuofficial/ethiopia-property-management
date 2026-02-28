@@ -110,10 +110,27 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { tenantId, propertyId, unitIds, startDate, endDate, monthlyRent, securityDeposit, advancePayment, legalAgreementUrl, notes } = body;
+    const { 
+      tenantId, 
+      propertyId, 
+      unitIds, 
+      startDate, 
+      endDate, 
+      monthlyRent, 
+      securityDeposit, 
+      advancePayment, 
+      legalAgreementUrl, 
+      paymentReceiptUrl,
+      notes 
+    } = body;
 
     if (!tenantId || !propertyId || !unitIds || unitIds.length === 0 || !startDate || !endDate || !monthlyRent) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // Legal agreement is required
+    if (!legalAgreementUrl) {
+      return NextResponse.json({ error: 'Legal agreement document is required' }, { status: 400 });
     }
 
     // Check access for property admin
@@ -137,7 +154,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create contract
+    const advancePaymentAmount = parseFloat(advancePayment || 0);
+    const monthlyRentAmount = parseFloat(monthlyRent);
+
+    // Create contract with payment and invoice
     const result = await db.$transaction(async (tx) => {
       const contract = await tx.contract.create({
         data: {
@@ -146,13 +166,13 @@ export async function POST(request: NextRequest) {
           createdById: currentUser.id,
           startDate: new Date(startDate),
           endDate: new Date(endDate),
-          monthlyRent: parseFloat(monthlyRent),
+          monthlyRent: monthlyRentAmount,
           securityDeposit: parseFloat(securityDeposit || 0),
-          advancePayment: parseFloat(advancePayment || 0),
-          remainingAdvance: parseFloat(advancePayment || 0),
+          advancePayment: advancePaymentAmount,
+          remainingAdvance: advancePaymentAmount,
           legalAgreementUrl: legalAgreementUrl || null,
           notes: notes || null,
-          status: advancePayment > 0 ? 'UNDER_REVIEW' : 'DRAFT',
+          status: 'UNDER_REVIEW', // Always under review for payment verification
         },
       });
 
@@ -163,7 +183,7 @@ export async function POST(request: NextRequest) {
           data: {
             contractId: contract.id,
             unitId,
-            monthlyRent: unit?.monthlyRent || parseFloat(monthlyRent),
+            monthlyRent: unit?.monthlyRent || monthlyRentAmount,
           },
         });
 
@@ -174,18 +194,41 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // If advance payment, create a payment record
-      if (advancePayment && parseFloat(advancePayment) > 0) {
+      // Create payment record with receipt
+      if (advancePaymentAmount > 0) {
         await tx.payment.create({
           data: {
             contractId: contract.id,
-            amount: parseFloat(advancePayment),
-            paymentType: 'ADVANCE',
+            amount: advancePaymentAmount,
+            paymentType: advancePaymentAmount > monthlyRentAmount ? 'ADVANCE' : 'MONTHLY',
             status: 'PENDING',
-            notes: 'Advance payment upon contract creation',
+            receiptUrl: paymentReceiptUrl || null,
+            notes: 'Payment upon contract creation - awaiting verification',
           },
         });
       }
+
+      // Create initial invoice for first month
+      const invoiceNumber = generateInvoiceNumber();
+      const dueDate = new Date(startDate);
+      dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days from contract start
+
+      await tx.invoice.create({
+        data: {
+          contractId: contract.id,
+          invoiceNumber,
+          amount: monthlyRentAmount,
+          taxAmount: 0,
+          taxRate: 0,
+          totalAmount: monthlyRentAmount,
+          dueDate,
+          periodStart: new Date(startDate),
+          periodEnd: new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + 1)),
+          status: advancePaymentAmount >= monthlyRentAmount ? 'PAID' : 'PENDING',
+          paidAmount: advancePaymentAmount >= monthlyRentAmount ? monthlyRentAmount : 0,
+          notes: 'Initial invoice - First month rent',
+        },
+      });
 
       return contract;
     });

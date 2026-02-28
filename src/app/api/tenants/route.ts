@@ -90,39 +90,63 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, password, fullName, phone, address, idType, idNumber, idDocumentUrl, emergencyContact, emergencyPhone } = body;
+    const { 
+      email, 
+      password, 
+      fullName, 
+      phone, 
+      address, 
+      idType, 
+      idNumber, 
+      idDocumentUrl, 
+      emergencyContact, 
+      emergencyPhone,
+      enablePortalAccess = true  // Default to true for backward compatibility
+    } = body;
 
-    if (!email || !password || !fullName || !phone) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    // Validate required fields
+    if (!fullName || !phone) {
+      return NextResponse.json({ error: 'Full name and phone are required' }, { status: 400 });
     }
 
-    // Check if email already exists
-    const existingUser = await db.user.findUnique({ where: { email } });
-    if (existingUser) {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 400 });
+    // If portal access is enabled, email and password are required
+    if (enablePortalAccess && (!email || !password)) {
+      return NextResponse.json({ error: 'Email and password are required when portal access is enabled' }, { status: 400 });
     }
 
-    const hashedPassword = await hashPassword(password);
+    // Check if email already exists (only if email is provided)
+    if (email) {
+      const existingUser = await db.user.findUnique({ where: { email } });
+      if (existingUser) {
+        return NextResponse.json({ error: 'Email already exists' }, { status: 400 });
+      }
+    }
 
-    // Create user and tenant in transaction
+    // Create tenant (with or without user account)
     const result = await db.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email,
-          password: hashedPassword,
-          name: fullName,
-          phone,
-          role: 'TENANT' as UserRole,
-          isActive: true,
-        },
-      });
+      let user = null;
+      
+      // Only create user account if portal access is enabled
+      if (enablePortalAccess && email && password) {
+        const hashedPassword = await hashPassword(password);
+        user = await tx.user.create({
+          data: {
+            email,
+            password: hashedPassword,
+            name: fullName,
+            phone,
+            role: 'TENANT' as UserRole,
+            isActive: true,
+          },
+        });
+      }
 
       const tenant = await tx.tenant.create({
         data: {
-          userId: user.id,
+          userId: user?.id || null,
           fullName,
           phone,
-          email: email, // Also save email to tenant table
+          email: email || null, // Save email to tenant table
           address: address || null,
           idType: idType || null,
           idNumber: idNumber || null,
@@ -138,12 +162,12 @@ export async function POST(request: NextRequest) {
       return tenant;
     });
 
-    const { user: { password: _, ...userWithoutPassword }, ...tenantWithoutUserPassword } = { 
+    const { user: { password: _, ...userWithoutPassword } = { password: '' }, ...tenantWithoutUserPassword } = { 
       ...result, 
       user: result.user 
     };
 
-    return NextResponse.json({ ...tenantWithoutUserPassword, user: userWithoutPassword });
+    return NextResponse.json({ ...tenantWithoutUserPassword, user: result.user ? userWithoutPassword : null });
   } catch (error) {
     console.error('Create tenant error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
