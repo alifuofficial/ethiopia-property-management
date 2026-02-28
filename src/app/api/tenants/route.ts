@@ -34,21 +34,9 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       });
     } else if (['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(currentUser.role)) {
-      // Get tenants from contracts on assigned properties
-      const assignments = await db.propertyAssignment.findMany({
-        where: { userId: currentUser.id },
-        select: { propertyId: true },
-      });
-      const propertyIds = assignments.map(a => a.propertyId);
-
-      const contracts = await db.contract.findMany({
-        where: { propertyId: { in: propertyIds } },
-        select: { tenantId: true },
-      });
-      const tenantIds = [...new Set(contracts.map(c => c.tenantId))];
-
+      // Property Admin and Accountant can see ALL tenants
+      // They need to select tenants when creating contracts
       tenants = await db.tenant.findMany({
-        where: { id: { in: tenantIds } },
         include: {
           user: true,
         },
