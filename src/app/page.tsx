@@ -2205,25 +2205,25 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
 
       {/* Share Dialog */}
       <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-lg">
               <Send className="h-5 w-5 text-primary" />
               Share Invoice
             </DialogTitle>
             <DialogDescription>
-              Send this invoice to the tenant via SMS or Email
+              Send this invoice link to the tenant via SMS or Email
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 py-2">
             {/* Invoice URL */}
             <div className="p-3 bg-muted/50 rounded-lg">
-              <Label className="text-xs text-muted-foreground">Invoice Link</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <code className="text-xs flex-1 truncate bg-background px-2 py-1 rounded border">
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Invoice Link</Label>
+              <div className="flex items-center gap-2">
+                <code className="text-xs flex-1 truncate bg-background px-3 py-2 rounded border overflow-hidden">
                   {getInvoiceUrl()}
                 </code>
-                <Button size="sm" variant="outline" onClick={handleCopyLink}>
+                <Button size="sm" variant="default" onClick={handleCopyLink}>
                   Copy
                 </Button>
               </div>
@@ -2231,18 +2231,18 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
 
             {/* Tenant Info */}
             <div className="p-3 bg-muted/50 rounded-lg">
-              <Label className="text-xs text-muted-foreground">Tenant</Label>
-              <p className="font-medium">{invoice.contract?.tenant?.fullName}</p>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Send To</Label>
+              <p className="font-semibold">{invoice.contract?.tenant?.fullName || 'Unknown Tenant'}</p>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-1.5">
                 {invoice.contract?.tenant?.phone && (
-                  <span className="flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
+                  <span className="flex items-center gap-1.5 bg-background px-2 py-0.5 rounded">
+                    <Phone className="h-3.5 w-3.5" />
                     {invoice.contract.tenant.phone}
                   </span>
                 )}
                 {invoice.contract?.tenant?.email && (
-                  <span className="flex items-center gap-1">
-                    <Mail className="h-3 w-3" />
+                  <span className="flex items-center gap-1.5 bg-background px-2 py-0.5 rounded">
+                    <Mail className="h-3.5 w-3.5" />
                     {invoice.contract.tenant.email}
                   </span>
                 )}
@@ -2250,53 +2250,61 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
             </div>
 
             {/* Invoice Summary */}
-            <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
+            <div className="p-4 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Amount Due</span>
-                <span className="font-bold text-lg">{(invoice.totalAmount || invoice.amount).toLocaleString()} ETB</span>
+                <span className="font-bold text-xl text-orange-700 dark:text-orange-300">
+                  {(invoice.totalAmount || invoice.amount).toLocaleString()} ETB
+                </span>
               </div>
-              <div className="flex justify-between items-center mt-1">
+              <div className="flex justify-between items-center mt-2">
                 <span className="text-sm text-muted-foreground">Due Date</span>
                 <span className="text-sm font-medium">{new Date(invoice.dueDate).toLocaleDateString()}</span>
               </div>
             </div>
 
             {/* Send Options */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <Button 
                 variant="outline" 
-                className="h-auto py-3 flex flex-col items-center gap-2"
+                className="h-auto py-4 flex flex-col items-center gap-2"
                 onClick={handleSendSms}
                 disabled={sendingSms || !invoice.contract?.tenant?.phone}
               >
                 {sendingSms ? (
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                 ) : (
-                  <MessageSquare className="h-5 w-5 text-primary" />
+                  <MessageSquare className="h-5 w-5 text-green-600" />
                 )}
-                <span className="text-sm font-medium">Send via SMS</span>
-                {!invoice.contract?.tenant?.phone && (
-                  <span className="text-xs text-muted-foreground">No phone</span>
-                )}
+                <div className="text-center">
+                  <span className="text-sm font-medium block">Send via SMS</span>
+                  {!invoice.contract?.tenant?.phone && (
+                    <span className="text-xs text-muted-foreground">No phone number</span>
+                  )}
+                </div>
               </Button>
               <Button 
                 variant="outline" 
-                className="h-auto py-3 flex flex-col items-center gap-2"
+                className="h-auto py-4 flex flex-col items-center gap-2"
                 onClick={handleSendEmail}
                 disabled={!invoice.contract?.tenant?.email}
               >
-                <Mail className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">Send via Email</span>
-                {!invoice.contract?.tenant?.email && (
-                  <span className="text-xs text-muted-foreground">No email</span>
-                )}
+                <Mail className="h-5 w-5 text-blue-600" />
+                <div className="text-center">
+                  <span className="text-sm font-medium block">Send via Email</span>
+                  {!invoice.contract?.tenant?.email && (
+                    <span className="text-xs text-muted-foreground">No email address</span>
+                  )}
+                </div>
               </Button>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsShareDialogOpen(false)}>Close</Button>
-            <Button onClick={() => window.open(getInvoiceUrl(), '_blank')}>
-              <Eye className="h-4 w-4 mr-1" />
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setIsShareDialogOpen(false)} className="w-full sm:w-auto">
+              Close
+            </Button>
+            <Button onClick={() => window.open(getInvoiceUrl(), '_blank')} className="w-full sm:w-auto">
+              <Eye className="h-4 w-4 mr-2" />
               Preview Invoice
             </Button>
           </DialogFooter>
