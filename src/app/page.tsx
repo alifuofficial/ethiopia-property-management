@@ -1047,274 +1047,155 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
         />
       </div>
 
-      {/* Charts Row 1 */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Revenue Trend Chart */}
-        <Card className="lg:col-span-2 border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+      {/* Main Analytics Chart */}
+      <Card className="border-border/50 shadow-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-green-500/10 p-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-lg">Revenue Trend</CardTitle>
-              <CardDescription>Monthly revenue vs expenses</CardDescription>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-emerald-600" />
+                Property Analytics Overview
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Revenue, collections, and property performance at a glance
+              </CardDescription>
             </div>
-            <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
-              <TrendingUp className="h-3 w-3 mr-1" /> {calculateRevenueTrend()}%
-            </Badge>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueData.length > 0 ? revenueData : [{ month: 'No Data', revenue: 0, expenses: 0 }]}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" stroke="#6b7280" fontSize={12} />
-                  <YAxis stroke="#6b7280" fontSize={12} tickFormatter={(v) => `${v/1000}k`} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px'
-                    }}
-                    formatter={(value: number) => [`${value.toLocaleString()} ETB`, '']}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="#22c55e" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorRevenue)" 
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="expenses" 
-                    stroke="#14b8a6" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorExpenses)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="flex items-center gap-4">
+              <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-1">
+                <TrendingUp className="h-3 w-3 mr-1" /> {calculateRevenueTrend()}% Growth
+              </Badge>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+        <CardContent className="p-6">
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={revenueData.length > 0 ? revenueData : [{ month: 'No Data', revenue: 0, expenses: 0 }]}>
+                <defs>
+                  <linearGradient id="colorRevenueMain" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#9ca3af" fontSize={12} tickFormatter={(v) => `${v/1000}k`} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                  }}
+                  formatter={(value: number) => [`${value.toLocaleString()} ETB`, 'Revenue']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#10b981"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorRevenueMain)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Occupancy Pie Chart */}
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Unit Status</CardTitle>
-            <CardDescription>Current occupancy breakdown</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <RePieChart>
-                  <Pie
-                    data={occupancyData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {occupancyData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </RePieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex justify-center gap-6 mt-2">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-green-500" />
-                <span className="text-sm text-muted-foreground">Occupied ({stats.occupiedUnits})</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-green-300" />
-                <span className="text-sm text-muted-foreground">Available ({stats.availableUnits})</span>
+      {/* Key Metrics Summary */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* Units Metric */}
+        <Card className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30 border-emerald-200/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-emerald-600">Unit Occupancy</span>
+              <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/50">
+                <Home className="h-4 w-4 text-emerald-600" />
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts Row 2 */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Payment Status */}
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Payment Status</CardTitle>
-            <CardDescription>Payment distribution</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <RePieChart>
-                  <Pie
-                    data={paymentStatusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={35}
-                    outerRadius={70}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {paymentStatusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </RePieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="space-y-2 mt-2">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-green-500" />
-                  <span className="text-muted-foreground">Approved</span>
-                </div>
-                <span className="font-medium">{paymentStatusData[0].value}</span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-emerald-600/70">Occupied</span>
+                <span className="text-sm font-semibold text-emerald-700">{stats.occupiedUnits}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-amber-500" />
-                  <span className="text-muted-foreground">Pending</span>
-                </div>
-                <span className="font-medium">{stats.pendingPayments}</span>
+              <div className="w-full bg-emerald-200/50 rounded-full h-2">
+                <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${occupancyRate}%` }} />
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-red-500" />
-                  <span className="text-muted-foreground">Overdue</span>
-                </div>
-                <span className="font-medium">{stats.overdueInvoices}</span>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-emerald-600/70">{occupancyRate}% occupied</span>
+                <span className="text-emerald-600/70">{stats.availableUnits} available</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Collections vs Target */}
-        <Card className="lg:col-span-2 border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <div>
-              <CardTitle className="text-lg">Collections vs Target</CardTitle>
-              <CardDescription>Weekly collection performance</CardDescription>
+        {/* Contracts Metric */}
+        <Card className="bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-teal-950/30 dark:to-cyan-950/30 border-teal-200/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-teal-600">Contracts</span>
+              <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/50">
+                <FileText className="h-4 w-4 text-teal-600" />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-primary" />
-              <span className="text-sm text-muted-foreground">Goal: 350,000 ETB</span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={monthlyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
-                  <YAxis stroke="#6b7280" fontSize={12} tickFormatter={(v) => `${v/1000}k`} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px'
-                    }}
-                    formatter={(value: number) => [`${value.toLocaleString()} ETB`, '']}
-                  />
-                  <Bar dataKey="collections" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="target" stroke="#14b8a6" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts Row 3 */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Contract Status */}
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Contract Distribution</CardTitle>
-            <CardDescription>Status breakdown of all contracts</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={contractData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
-                  <XAxis type="number" stroke="#6b7280" fontSize={12} />
-                  <YAxis type="category" dataKey="name" stroke="#6b7280" fontSize={12} width={80} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px'
-                    }}
-                  />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {contractData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-teal-600/70">Active</span>
+                <span className="text-sm font-semibold text-teal-700">{stats.activeContracts || 0}</span>
+              </div>
+              <div className="w-full bg-teal-200/50 rounded-full h-2">
+                <div className="bg-teal-500 h-2 rounded-full transition-all" style={{ width: `${stats.totalContracts > 0 ? ((stats.activeContracts || 0) / stats.totalContracts) * 100 : 0}%` }} />
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-teal-600/70">{stats.pendingContracts || 0} pending</span>
+                <span className="text-teal-600/70">{stats.totalContracts} total</span>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Occupancy Gauge */}
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Occupancy Rate</CardTitle>
-            <CardDescription>Current property utilization</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-center">
-              <div className="relative w-48 h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadialBarChart 
-                    cx="50%" 
-                    cy="50%" 
-                    innerRadius="60%" 
-                    outerRadius="100%" 
-                    startAngle={180} 
-                    endAngle={0}
-                    data={[{ value: occupancyRate, fill: '#22c55e' }]}
-                  >
-                    <RadialBar
-                      background={{ fill: '#e5e7eb' }}
-                      dataKey="value"
-                      cornerRadius={10}
-                    />
-                  </RadialBarChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="text-4xl font-bold text-primary">{occupancyRate}%</div>
-                    <div className="text-sm text-muted-foreground">occupied</div>
-                  </div>
-                </div>
+        {/* Payments Metric */}
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border-amber-200/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-amber-600">Payments</span>
+              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+                <CreditCard className="h-4 w-4 text-amber-600" />
               </div>
             </div>
-            <div className="flex justify-center gap-4 mt-4">
-              <div className="text-center">
-                <div className="text-2xl font-semibold text-primary">{stats.occupiedUnits}</div>
-                <div className="text-xs text-muted-foreground">Occupied</div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-amber-600/70">Approved</span>
+                <span className="text-sm font-semibold text-amber-700">{stats.approvedPayments || 0}</span>
               </div>
-              <div className="w-px bg-border" />
-              <div className="text-center">
-                <div className="text-2xl font-semibold text-teal-500">{stats.availableUnits}</div>
-                <div className="text-xs text-muted-foreground">Available</div>
+              <div className="w-full bg-amber-200/50 rounded-full h-2">
+                <div className="bg-amber-500 h-2 rounded-full transition-all" style={{ width: `${(stats.approvedPayments || 0) + (stats.pendingPayments || 0) > 0 ? ((stats.approvedPayments || 0) / ((stats.approvedPayments || 0) + (stats.pendingPayments || 0))) * 100 : 0}%` }} />
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-amber-600/70">{stats.pendingPayments || 0} pending</span>
+                <span className="text-amber-600/70">{(stats.approvedPayments || 0) + (stats.pendingPayments || 0)} total</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Revenue Metric */}
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200/50">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-green-600">Revenue</span>
+              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/50">
+                <DollarSign className="h-4 w-4 text-green-600" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-2xl font-bold text-green-700">
+                {(stats.totalRevenue || 0).toLocaleString()} ETB
+              </div>
+              <div className="flex items-center gap-1 text-xs text-green-600/70">
+                <TrendingUp className="h-3 w-3" />
+                <span>Total collected revenue</span>
               </div>
             </div>
           </CardContent>
