@@ -30,11 +30,30 @@ import {
   Landmark, HomeIcon, UserCircle, FileSignature, DollarSignIcon, ReceiptIcon,
   CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers, Globe, CalendarDays, Percent
 } from 'lucide-react';
-import { 
-  AreaChart, Area, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  RadialBarChart, RadialBar, ComposedChart
-} from 'recharts';
+import dynamic from 'next/dynamic';
+
+// Dynamically import recharts to reduce initial bundle size
+const AreaChart = dynamic(() => import('recharts').then(mod => mod.AreaChart), { ssr: false });
+const Area = dynamic(() => import('recharts').then(mod => mod.Area), { ssr: false });
+const BarChart = dynamic(() => import('recharts').then(mod => mod.BarChart), { ssr: false });
+const Bar = dynamic(() => import('recharts').then(mod => mod.Bar), { ssr: false });
+const RechartsPieChart = dynamic(() => import('recharts').then(mod => mod.PieChart), { ssr: false });
+const Pie = dynamic(() => import('recharts').then(mod => mod.Pie), { ssr: false });
+const Cell = dynamic(() => import('recharts').then(mod => mod.Cell), { ssr: false });
+const LineChart = dynamic(() => import('recharts').then(mod => mod.LineChart), { ssr: false });
+const Line = dynamic(() => import('recharts').then(mod => mod.Line), { ssr: false });
+const XAxis = dynamic(() => import('recharts').then(mod => mod.XAxis), { ssr: false });
+const YAxis = dynamic(() => import('recharts').then(mod => mod.YAxis), { ssr: false });
+const CartesianGrid = dynamic(() => import('recharts').then(mod => mod.CartesianGrid), { ssr: false });
+const Tooltip = dynamic(() => import('recharts').then(mod => mod.Tooltip), { ssr: false });
+const Legend = dynamic(() => import('recharts').then(mod => mod.Legend), { ssr: false });
+const ResponsiveContainer = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer), { ssr: false });
+const RadialBarChart = dynamic(() => import('recharts').then(mod => mod.RadialBarChart), { ssr: false });
+const RadialBar = dynamic(() => import('recharts').then(mod => mod.RadialBar), { ssr: false });
+const ComposedChart = dynamic(() => import('recharts').then(mod => mod.ComposedChart), { ssr: false });
+
+// Alias for PieChart to avoid conflict with lucide icon
+const RePieChart = RechartsPieChart;
 import type { 
   User, Property, Unit, Tenant, Contract, Invoice, Payment, 
   ContractTerminationRequest, PropertyAssignment, SystemSettings, DashboardStats 
