@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     let tenants;
 
     if (['SYSTEM_ADMIN', 'OWNER'].includes(currentUser.role)) {
+      // System Admin and Owner can see all tenants
       tenants = await db.tenant.findMany({
         include: {
           user: true,
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
     } else if (['PROPERTY_ADMIN', 'ACCOUNTANT'].includes(currentUser.role)) {
       // Property Admin and Accountant can see ALL tenants
       // They need to select tenants when creating contracts
+      // This allows them to create contracts for any tenant
       tenants = await db.tenant.findMany({
         include: {
           user: true,
