@@ -363,6 +363,7 @@ export default function PropertyManagementSystem() {
                     icon={<Shield className="h-4 w-4" />}
                     collapsed={collapsedCategories['admin']}
                     onToggle={() => setCollapsedCategories(prev => ({ ...prev, admin: !prev.admin }))}
+                    defaultOpen
                   >
                     <SidebarItem icon={<Users className="h-4 w-4" />} label="User Management" view="users" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<Landmark className="h-4 w-4" />} label="Properties" view="properties" currentView={currentView} onClick={setCurrentView} />
@@ -378,6 +379,7 @@ export default function PropertyManagementSystem() {
                     icon={<Building className="h-4 w-4" />}
                     collapsed={collapsedCategories['property']}
                     onToggle={() => setCollapsedCategories(prev => ({ ...prev, property: !prev.property }))}
+                    defaultOpen
                   >
                     <SidebarItem icon={<DoorOpen className="h-4 w-4" />} label="Units" view="units" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<UserCircle className="h-4 w-4" />} label="Tenants" view="tenants" currentView={currentView} onClick={setCurrentView} />
@@ -393,6 +395,7 @@ export default function PropertyManagementSystem() {
                     icon={<DollarSign className="h-4 w-4" />}
                     collapsed={collapsedCategories['finance']}
                     onToggle={() => setCollapsedCategories(prev => ({ ...prev, finance: !prev.finance }))}
+                    defaultOpen
                   >
                     <SidebarItem icon={<ReceiptIcon className="h-4 w-4" />} label="Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<CreditCard className="h-4 w-4" />} label="Payments" view="payments" currentView={currentView} onClick={setCurrentView} />
