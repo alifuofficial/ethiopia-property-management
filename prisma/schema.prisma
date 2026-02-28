@@ -81,7 +81,6 @@ model User {
   // Relations
   propertyAssignments  PropertyAssignment[]
   tenants              Tenant[]  // Optional - tenant may not have user account
-  tenantsCreated       Tenant[]             @relation("TenantCreator")  // Tenants this user created
   contractsCreated     Contract[]            @relation("ContractCreator")
   terminationRequests  ContractTerminationRequest[]
   paymentsApproved     Payment[]             @relation("PaymentApprover")
@@ -194,7 +193,6 @@ model PropertyAssignment {
 model Tenant {
   id            String   @id @default(cuid())
   userId        String?  @unique  // Nullable - tenant can exist without user account (no portal access)
-  createdById   String?  // Who created this tenant (for visibility)
   fullName      String
   phone         String
   email         String?
@@ -209,7 +207,6 @@ model Tenant {
 
   // Relations
   user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdBy     User?     @relation("TenantCreator", fields: [createdById], references: [id], onDelete: SetNull)
   contracts     Contract[]
 
   @@map("tenants")
