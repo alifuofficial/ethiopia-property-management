@@ -384,8 +384,12 @@ export default function PropertyManagementSystem() {
                     <SidebarItem icon={<DoorOpen className="h-4 w-4" />} label="Units" view="units" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<UserCircle className="h-4 w-4" />} label="Tenants" view="tenants" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<FileSignature className="h-4 w-4" />} label="Contracts" view="contracts" currentView={currentView} onClick={setCurrentView} />
-                    <SidebarItem icon={<ReceiptIcon className="h-4 w-4" />} label="Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
                   </SidebarCategory>
+                )}
+
+                {/* Invoices - Only for System Admin & Owner */}
+                {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && (
+                  <SidebarItem icon={<ReceiptIcon className="h-4 w-4" />} label="Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
                 )}
 
                 {/* Financial Management - For Accountant, System Admin & Owner */}
@@ -832,15 +836,14 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
   // If user is PROPERTY_ADMIN, show specialized Property Admin Dashboard
   if (user?.role === 'PROPERTY_ADMIN') {
     return (
-      <PropertyAdminDashboard 
-        stats={stats} 
-        user={user} 
+      <PropertyAdminDashboard
+        stats={stats}
+        user={user}
         assignments={assignments}
         properties={properties}
         contracts={contracts}
         tenants={tenants}
         units={units}
-        invoices={invoices}
         onNavigate={onNavigate}
       />
     );
@@ -1401,32 +1404,30 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
 }
 
 // Property Admin Dashboard - Specialized for Property Admin Role
-function PropertyAdminDashboard({ 
-  stats, 
-  user, 
-  assignments, 
-  properties, 
-  contracts, 
+function PropertyAdminDashboard({
+  stats,
+  user,
+  assignments,
+  properties,
+  contracts,
   tenants,
   units,
-  invoices,
-  onNavigate 
-}: { 
-  stats: DashboardStats | null; 
+  onNavigate
+}: {
+  stats: DashboardStats | null;
   user: User | null;
   assignments: PropertyAssignment[];
   properties: Property[];
   contracts: Contract[];
   tenants: Tenant[];
   units: Unit[];
-  invoices: Invoice[];
   onNavigate: (view: string) => void;
 }) {
   // Get assigned properties for this Property Admin
   const userAssignedPropertyIds = assignments
     .filter(a => a.userId === user?.id)
     .map(a => a.propertyId);
-  
+
   const assignedProperties = properties.filter(p => userAssignedPropertyIds.includes(p.id));
 
   // Filter units by assigned properties
@@ -1445,22 +1446,15 @@ function PropertyAdminDashboard({
     return daysUntilExpiry > 0 && daysUntilExpiry <= 30;
   });
 
-  // Filter invoices by assigned properties
-  const assignedInvoices = invoices.filter(inv => 
-    inv.contract && userAssignedPropertyIds.includes(inv.contract.propertyId)
-  );
-  const pendingInvoices = assignedInvoices.filter(i => i.status === 'PENDING');
-  const overdueInvoices = assignedInvoices.filter(i => i.status === 'OVERDUE');
-
   // Calculate occupancy rate
-  const occupancyRate = assignedUnits.length > 0 
-    ? Math.round((occupiedUnits.length / assignedUnits.length) * 100) 
+  const occupancyRate = assignedUnits.length > 0
+    ? Math.round((occupiedUnits.length / assignedUnits.length) * 100)
     : 0;
 
   // Calculate monthly rent potential
   const monthlyRentPotential = occupiedUnits.reduce((sum, u) => {
-    const contract = assignedContracts.find(c => 
-      c.status === 'ACTIVE' && 
+    const contract = assignedContracts.find(c =>
+      c.status === 'ACTIVE' &&
       c.contractUnits?.some(cu => cu.unitId === u.id)
     );
     return sum + (contract?.monthlyRent || u.monthlyRent);
@@ -1652,25 +1646,10 @@ function PropertyAdminDashboard({
             </div>
           </CardContent>
         </Card>
-
-        <Card className="bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-950/30 dark:to-red-950/30 border-rose-200/50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-rose-600 font-medium">Overdue Invoices</p>
-                <p className="text-2xl font-bold text-rose-700 dark:text-rose-300">{overdueInvoices.length}</p>
-                <p className="text-xs text-rose-600/70">Need follow-up</p>
-              </div>
-              <div className="p-3 rounded-lg bg-rose-100 dark:bg-rose-900/50">
-                <AlertTriangle className="h-6 w-6 text-rose-600 dark:text-rose-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Alerts Section */}
-      {(expiringContracts.length > 0 || overdueInvoices.length > 0 || pendingContracts.length > 0) && (
+      {(expiringContracts.length > 0 || pendingContracts.length > 0) && (
         <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30">
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
@@ -1683,15 +1662,12 @@ function PropertyAdminDashboard({
                   {expiringContracts.length > 0 && (
                     <span>{expiringContracts.length} contract(s) expiring within 30 days</span>
                   )}
-                  {overdueInvoices.length > 0 && (
-                    <span>{overdueInvoices.length} overdue invoice(s)</span>
-                  )}
                   {pendingContracts.length > 0 && (
                     <span>{pendingContracts.length} contract(s) awaiting payment</span>
                   )}
                 </div>
               </div>
-              <Button 
+              <Button
                 onClick={() => onNavigate('contracts')}
                 className="bg-amber-500 hover:bg-amber-600 text-white"
               >
