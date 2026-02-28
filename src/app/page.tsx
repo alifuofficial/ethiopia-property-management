@@ -394,6 +394,7 @@ export default function PropertyManagementSystem() {
                     collapsed={collapsedCategories['finance']}
                     onToggle={() => setCollapsedCategories(prev => ({ ...prev, finance: !prev.finance }))}
                   >
+                    <SidebarItem icon={<ReceiptIcon className="h-4 w-4" />} label="Invoices" view="invoices" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<CreditCard className="h-4 w-4" />} label="Payments" view="payments" currentView={currentView} onClick={setCurrentView} />
                     <SidebarItem icon={<ArrowLeftRight className="h-4 w-4" />} label="Terminations" view="terminations" currentView={currentView} onClick={setCurrentView} />
                   </SidebarCategory>
@@ -1950,6 +1951,16 @@ function AccountantDashboard({
 // Modern Invoice Card with QR Code
 function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: () => void }) {
   const [isQRDialogOpen, setIsQRDialogOpen] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
+  const [sendingSms, setSendingSms] = useState(false);
+  
+  // Generate invoice URL
+  const getInvoiceUrl = () => {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/invoices/${invoice.invoiceNumber}`;
+    }
+    return `/invoices/${invoice.invoiceNumber}`;
+  };
   
   // Generate QR code data - contains invoice details as JSON
   const qrData = JSON.stringify({
@@ -1960,6 +1971,7 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
     status: invoice.status,
     property: invoice.contract?.property?.name,
     id: invoice.id,
+    url: getInvoiceUrl(),
   });
 
   const getStatusColor = (status: string) => {
@@ -1989,6 +2001,47 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
     const now = new Date();
     const diff = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     return diff;
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(getInvoiceUrl());
+    toast({ title: 'Copied!', description: 'Invoice link copied to clipboard' });
+  };
+
+  const handleSendSms = async () => {
+    if (!invoice.contract?.tenant?.phone) {
+      toast({ title: 'Error', description: 'Tenant phone number not available', variant: 'destructive' });
+      return;
+    }
+    setSendingSms(true);
+    try {
+      await api('/sms', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          action: 'invoice', 
+          invoiceId: invoice.id,
+          message: `Invoice ${invoice.invoiceNumber} for ${(invoice.totalAmount || invoice.amount).toLocaleString()} ETB is due on ${new Date(invoice.dueDate).toLocaleDateString()}. View & pay: ${getInvoiceUrl()}`
+        }),
+      });
+      toast({ title: 'Success', description: 'Invoice link sent via SMS' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to send SMS', variant: 'destructive' });
+    } finally {
+      setSendingSms(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!invoice.contract?.tenant?.email) {
+      toast({ title: 'Error', description: 'Tenant email not available', variant: 'destructive' });
+      return;
+    }
+    try {
+      // Email would be sent through a backend service
+      toast({ title: 'Info', description: 'Email functionality coming soon' });
+    } catch (err) {
+      toast({ title: 'Error', description: 'Failed to send email', variant: 'destructive' });
+    }
   };
 
   const daysUntilDue = getDaysUntilDue();
@@ -2066,25 +2119,39 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
           )}
         </div>
 
-        {/* QR Button */}
+        {/* Action Buttons */}
         <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="h-7 text-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsQRDialogOpen(true);
-            }}
-          >
-            <svg className="h-3 w-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="7" height="7" />
-              <rect x="14" y="3" width="7" height="7" />
-              <rect x="3" y="14" width="7" height="7" />
-              <rect x="14" y="14" width="7" height="7" />
-            </svg>
-            Show QR
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-7 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsQRDialogOpen(true);
+              }}
+            >
+              <svg className="h-3 w-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="7" height="7" />
+                <rect x="14" y="3" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" />
+                <rect x="14" y="14" width="7" height="7" />
+              </svg>
+              QR
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-7 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsShareDialogOpen(true);
+              }}
+            >
+              <Send className="h-3 w-3 mr-1" />
+              Share
+            </Button>
+          </div>
           <div className="flex items-center gap-1">
             {invoice.paidAmount > 0 && invoice.paidAmount < invoice.amount && (
               <span className="text-xs text-blue-600">
@@ -2131,6 +2198,106 @@ function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: (
               toast({ title: 'Copied', description: 'Invoice data copied to clipboard' });
             }}>
               Copy Data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-primary" />
+              Share Invoice
+            </DialogTitle>
+            <DialogDescription>
+              Send this invoice to the tenant via SMS or Email
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Invoice URL */}
+            <div className="p-3 bg-muted/50 rounded-lg">
+              <Label className="text-xs text-muted-foreground">Invoice Link</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="text-xs flex-1 truncate bg-background px-2 py-1 rounded border">
+                  {getInvoiceUrl()}
+                </code>
+                <Button size="sm" variant="outline" onClick={handleCopyLink}>
+                  Copy
+                </Button>
+              </div>
+            </div>
+
+            {/* Tenant Info */}
+            <div className="p-3 bg-muted/50 rounded-lg">
+              <Label className="text-xs text-muted-foreground">Tenant</Label>
+              <p className="font-medium">{invoice.contract?.tenant?.fullName}</p>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                {invoice.contract?.tenant?.phone && (
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {invoice.contract.tenant.phone}
+                  </span>
+                )}
+                {invoice.contract?.tenant?.email && (
+                  <span className="flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    {invoice.contract.tenant.email}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Invoice Summary */}
+            <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Amount Due</span>
+                <span className="font-bold text-lg">{(invoice.totalAmount || invoice.amount).toLocaleString()} ETB</span>
+              </div>
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-sm text-muted-foreground">Due Date</span>
+                <span className="text-sm font-medium">{new Date(invoice.dueDate).toLocaleDateString()}</span>
+              </div>
+            </div>
+
+            {/* Send Options */}
+            <div className="grid grid-cols-2 gap-3">
+              <Button 
+                variant="outline" 
+                className="h-auto py-3 flex flex-col items-center gap-2"
+                onClick={handleSendSms}
+                disabled={sendingSms || !invoice.contract?.tenant?.phone}
+              >
+                {sendingSms ? (
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                ) : (
+                  <MessageSquare className="h-5 w-5 text-primary" />
+                )}
+                <span className="text-sm font-medium">Send via SMS</span>
+                {!invoice.contract?.tenant?.phone && (
+                  <span className="text-xs text-muted-foreground">No phone</span>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                className="h-auto py-3 flex flex-col items-center gap-2"
+                onClick={handleSendEmail}
+                disabled={!invoice.contract?.tenant?.email}
+              >
+                <Mail className="h-5 w-5 text-primary" />
+                <span className="text-sm font-medium">Send via Email</span>
+                {!invoice.contract?.tenant?.email && (
+                  <span className="text-xs text-muted-foreground">No email</span>
+                )}
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsShareDialogOpen(false)}>Close</Button>
+            <Button onClick={() => window.open(getInvoiceUrl(), '_blank')}>
+              <Eye className="h-4 w-4 mr-1" />
+              Preview Invoice
             </Button>
           </DialogFooter>
         </DialogContent>
