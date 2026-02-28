@@ -9058,6 +9058,565 @@ function TerminationsView({ terminations, setTerminations, user }: {
   );
 }
 
+// Payment Method type
+interface PaymentMethodType {
+  id: string;
+  name: string;
+  type: 'ONLINE' | 'OFFLINE';
+  provider: string | null;
+  apiKey: string | null;
+  secretKey: string | null;
+  merchantId: string | null;
+  callbackUrl: string | null;
+  baseUrl: string | null;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountHolderName: string | null;
+  instructions: string | null;
+  isActive: boolean;
+  displayOrder: number;
+  feeType: 'NONE' | 'PERCENTAGE' | 'FIXED';
+  feeAmount: number;
+  feePercent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Payment Methods Settings Component
+function PaymentMethodsSettings() {
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingMethod, setEditingMethod] = useState<PaymentMethodType | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    type: 'ONLINE' as 'ONLINE' | 'OFFLINE',
+    provider: '',
+    apiKey: '',
+    secretKey: '',
+    merchantId: '',
+    callbackUrl: '',
+    baseUrl: '',
+    bankName: '',
+    accountNumber: '',
+    accountHolderName: '',
+    instructions: '',
+    isActive: true,
+    displayOrder: 0,
+    feeType: 'NONE' as 'NONE' | 'PERCENTAGE' | 'FIXED',
+    feeAmount: 0,
+    feePercent: 0,
+  });
+
+  useEffect(() => {
+    loadPaymentMethods();
+  }, []);
+
+  const loadPaymentMethods = async () => {
+    try {
+      const data = await api<PaymentMethodType[]>('/payment-methods');
+      setPaymentMethods(data);
+    } catch (err) {
+      toast({ title: 'Error', description: 'Failed to load payment methods', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingMethod) {
+        const updated = await api<PaymentMethodType>(`/payment-methods?id=${editingMethod.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(formData),
+        });
+        setPaymentMethods(paymentMethods.map(m => m.id === updated.id ? updated : m));
+        toast({ title: 'Success', description: 'Payment method updated' });
+      } else {
+        const created = await api<PaymentMethodType>('/payment-methods', {
+          method: 'POST',
+          body: JSON.stringify(formData),
+        });
+        setPaymentMethods([...paymentMethods, created]);
+        toast({ title: 'Success', description: 'Payment method created' });
+      }
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to save', variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this payment method?')) return;
+    try {
+      await api(`/payment-methods?id=${id}`, { method: 'DELETE' });
+      setPaymentMethods(paymentMethods.filter(m => m.id !== id));
+      toast({ title: 'Success', description: 'Payment method deleted' });
+    } catch (err) {
+      toast({ title: 'Error', description: 'Failed to delete', variant: 'destructive' });
+    }
+  };
+
+  const handleToggleActive = async (method: PaymentMethodType) => {
+    try {
+      const updated = await api<PaymentMethodType>(`/payment-methods?id=${method.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive: !method.isActive }),
+      });
+      setPaymentMethods(paymentMethods.map(m => m.id === updated.id ? updated : m));
+      toast({ title: 'Success', description: `Payment method ${!method.isActive ? 'enabled' : 'disabled'}` });
+    } catch (err) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+
+  const openEditDialog = (method: PaymentMethodType) => {
+    setEditingMethod(method);
+    setFormData({
+      name: method.name,
+      type: method.type,
+      provider: method.provider || '',
+      apiKey: method.apiKey || '',
+      secretKey: method.secretKey || '',
+      merchantId: method.merchantId || '',
+      callbackUrl: method.callbackUrl || '',
+      baseUrl: method.baseUrl || '',
+      bankName: method.bankName || '',
+      accountNumber: method.accountNumber || '',
+      accountHolderName: method.accountHolderName || '',
+      instructions: method.instructions || '',
+      isActive: method.isActive,
+      displayOrder: method.displayOrder,
+      feeType: method.feeType,
+      feeAmount: method.feeAmount,
+      feePercent: method.feePercent,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      type: 'ONLINE',
+      provider: '',
+      apiKey: '',
+      secretKey: '',
+      merchantId: '',
+      callbackUrl: '',
+      baseUrl: '',
+      bankName: '',
+      accountNumber: '',
+      accountHolderName: '',
+      instructions: '',
+      isActive: true,
+      displayOrder: 0,
+      feeType: 'NONE',
+      feeAmount: 0,
+      feePercent: 0,
+    });
+    setEditingMethod(null);
+  };
+
+  const onlineMethods = paymentMethods.filter(m => m.type === 'ONLINE');
+  const offlineMethods = paymentMethods.filter(m => m.type === 'OFFLINE');
+
+  const providers = [
+    { id: 'chapa', name: 'Chapa', color: 'purple', icon: '💳' },
+    { id: 'telebirr', name: 'Telebirr', color: 'blue', icon: '📱' },
+    { id: 'cbebirr', name: 'CBE Birr', color: 'green', icon: '🏦' },
+    { id: 'mpesa', name: 'M-PESA', color: 'red', icon: '📱' },
+    { id: 'stripe', name: 'Stripe', color: 'indigo', icon: '💎' },
+    { id: 'paypal', name: 'PayPal', color: 'blue', icon: '💵' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Payment Methods</h2>
+          <p className="text-muted-foreground">Configure online and offline payment options</p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
+          <DialogTrigger asChild>
+            <Button className="bg-gradient-to-r from-teal-500 to-emerald-500">
+              <Plus className="h-4 w-4 mr-2" /> Add Method
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingMethod ? 'Edit' : 'Add'} Payment Method</DialogTitle>
+              <DialogDescription>
+                Configure {formData.type === 'ONLINE' ? 'online payment gateway' : 'offline payment method'}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Type Selection */}
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: 'ONLINE' })}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    formData.type === 'ONLINE'
+                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30'
+                      : 'border-border hover:border-teal-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${formData.type === 'ONLINE' ? 'bg-teal-100 text-teal-600' : 'bg-muted'}`}>
+                      <Globe className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">Online</p>
+                      <p className="text-xs text-muted-foreground">Chapa, Telebirr, etc.</p>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: 'OFFLINE' })}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    formData.type === 'OFFLINE'
+                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30'
+                      : 'border-border hover:border-teal-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${formData.type === 'OFFLINE' ? 'bg-teal-100 text-teal-600' : 'bg-muted'}`}>
+                      <Building className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">Offline</p>
+                      <p className="text-xs text-muted-foreground">Bank, Cash, etc.</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="font-medium">Name *</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g., Chapa, Bank Transfer"
+                    required
+                  />
+                </div>
+                {formData.type === 'ONLINE' && (
+                  <div className="space-y-2">
+                    <Label className="font-medium">Provider</Label>
+                    <Select value={formData.provider} onValueChange={(v) => setFormData({ ...formData, provider: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providers.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.icon} {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              {/* Online Payment Configuration */}
+              {formData.type === 'ONLINE' && (
+                <div className="space-y-4 p-4 rounded-xl bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-950/20 dark:to-emerald-950/20 border border-teal-200/50">
+                  <h3 className="font-semibold text-teal-700 dark:text-teal-300 flex items-center gap-2">
+                    <Globe className="h-4 w-4" /> API Configuration
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm">API Key</Label>
+                      <Input
+                        type="password"
+                        value={formData.apiKey}
+                        onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                        placeholder="Enter API key"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Secret Key</Label>
+                      <Input
+                        type="password"
+                        value={formData.secretKey}
+                        onChange={(e) => setFormData({ ...formData, secretKey: e.target.value })}
+                        placeholder="Enter secret key"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Merchant ID</Label>
+                      <Input
+                        value={formData.merchantId}
+                        onChange={(e) => setFormData({ ...formData, merchantId: e.target.value })}
+                        placeholder="Merchant identifier"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Base URL</Label>
+                      <Input
+                        value={formData.baseUrl}
+                        onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+                        placeholder="https://api.provider.com"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Callback URL</Label>
+                    <Input
+                      value={formData.callbackUrl}
+                      onChange={(e) => setFormData({ ...formData, callbackUrl: e.target.value })}
+                      placeholder="https://yoursite.com/api/callback"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Offline Payment Configuration */}
+              {formData.type === 'OFFLINE' && (
+                <div className="space-y-4 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 border border-amber-200/50">
+                  <h3 className="font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                    <Building className="h-4 w-4" /> Payment Details
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm">Bank Name</Label>
+                      <Input
+                        value={formData.bankName}
+                        onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
+                        placeholder="e.g., Commercial Bank of Ethiopia"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Account Number</Label>
+                      <Input
+                        value={formData.accountNumber}
+                        onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
+                        placeholder="e.g., 1000XXXXXXXXXX"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Account Holder Name</Label>
+                    <Input
+                      value={formData.accountHolderName}
+                      onChange={(e) => setFormData({ ...formData, accountHolderName: e.target.value })}
+                      placeholder="Company or individual name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Payment Instructions</Label>
+                    <Textarea
+                      value={formData.instructions}
+                      onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
+                      placeholder="Enter payment instructions for tenants..."
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Fee Configuration */}
+              <div className="space-y-4 p-4 rounded-xl bg-muted/30 border">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" /> Transaction Fee
+                </h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm">Fee Type</Label>
+                    <Select value={formData.feeType} onValueChange={(v: 'NONE' | 'PERCENTAGE' | 'FIXED') => setFormData({ ...formData, feeType: v })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">No Fee</SelectItem>
+                        <SelectItem value="PERCENTAGE">Percentage</SelectItem>
+                        <SelectItem value="FIXED">Fixed Amount</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.feeType === 'PERCENTAGE' && (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Fee %</Label>
+                      <Input
+                        type="number"
+                        value={formData.feePercent}
+                        onChange={(e) => setFormData({ ...formData, feePercent: parseFloat(e.target.value) || 0 })}
+                        placeholder="e.g., 2.5"
+                      />
+                    </div>
+                  )}
+                  {formData.feeType === 'FIXED' && (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Fee Amount (ETB)</Label>
+                      <Input
+                        type="number"
+                        value={formData.feeAmount}
+                        onChange={(e) => setFormData({ ...formData, feeAmount: parseFloat(e.target.value) || 0 })}
+                        placeholder="e.g., 10"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
+                <div>
+                  <p className="font-medium">Active Status</p>
+                  <p className="text-sm text-muted-foreground">Enable this payment method for transactions</p>
+                </div>
+                <Switch
+                  checked={formData.isActive}
+                  onCheckedChange={(v) => setFormData({ ...formData, isActive: v })}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+                <Button type="submit" className="bg-gradient-to-r from-teal-500 to-emerald-500">
+                  {editingMethod ? 'Update' : 'Create'} Method
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500" />
+        </div>
+      ) : (
+        <>
+          {/* Online Payment Methods */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/50">
+                  <Globe className="h-5 w-5 text-teal-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Online Payment Methods</CardTitle>
+                  <CardDescription>Payment gateways and digital wallets</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {onlineMethods.length > 0 ? (
+                <div className="space-y-3">
+                  {onlineMethods.map((method) => (
+                    <div key={method.id} className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border hover:bg-muted/80 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className={`p-2 rounded-lg ${
+                          method.provider === 'chapa' ? 'bg-purple-100 text-purple-600' :
+                          method.provider === 'telebirr' ? 'bg-blue-100 text-blue-600' :
+                          method.provider === 'cbebirr' ? 'bg-green-100 text-green-600' :
+                          'bg-teal-100 text-teal-600'
+                        }`}>
+                          <CreditCard className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{method.name}</p>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <span className="capitalize">{method.provider || 'Custom'}</span>
+                            {method.feeType !== 'NONE' && (
+                              <Badge variant="outline" className="text-xs">
+                                {method.feeType === 'PERCENTAGE' ? `${method.feePercent}% fee` : `${method.feeAmount} ETB fee`}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={method.isActive}
+                          onCheckedChange={() => handleToggleActive(method)}
+                        />
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(method)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleDelete(method.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Globe className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                  <p>No online payment methods configured</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Offline Payment Methods */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+                  <Building className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Offline Payment Methods</CardTitle>
+                  <CardDescription>Bank transfers, cash payments, and manual methods</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {offlineMethods.length > 0 ? (
+                <div className="space-y-3">
+                  {offlineMethods.map((method) => (
+                    <div key={method.id} className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border hover:bg-muted/80 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 rounded-lg bg-amber-100 text-amber-600">
+                          <Banknote className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{method.name}</p>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            {method.bankName && <span>{method.bankName}</span>}
+                            {method.accountNumber && <span>••••{method.accountNumber.slice(-4)}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={method.isActive}
+                          onCheckedChange={() => handleToggleActive(method)}
+                        />
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(method)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleDelete(method.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Building className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                  <p>No offline payment methods configured</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Settings View
 function SettingsView({ settings, setSettings }: {
   settings: SystemSettings | null;
@@ -9196,8 +9755,8 @@ function SettingsView({ settings, setSettings }: {
     { id: 'notifications', label: 'Notifications', icon: Bell, color: 'blue', description: 'Email, Telegram, WhatsApp' },
     { id: 'sms', label: 'SMS Gateway', icon: MessageSquare, color: 'emerald', description: 'SMS Ethiopia API' },
     { id: 'payments', label: 'Payments', icon: Wallet, color: 'amber', description: 'Payment rules & penalties' },
+    { id: 'payment-methods', label: 'Payment Methods', icon: CreditCard, color: 'teal', description: 'Online & Offline methods' },
     { id: 'tax', label: 'Tax', icon: Receipt, color: 'rose', description: 'Tax configuration' },
-    { id: 'integrations', label: 'Integrations', icon: Zap, color: 'purple', description: 'Third-party services' },
   ];
 
   const getCategoryStatus = (id: string) => {
@@ -9210,8 +9769,8 @@ function SettingsView({ settings, setSettings }: {
         if (formData.advancePaymentEnabled) parts.push(`${formData.advancePaymentMinMonths}-${formData.advancePaymentMaxMonths}mo advance`);
         if (formData.latePaymentPenaltyEnabled) parts.push(formData.latePaymentPenaltyType === 'PERCENTAGE' ? `${formData.latePaymentPenaltyPercent}% penalty` : `${formData.latePaymentPenaltyFixedAmount} ETB penalty`);
         return parts.length > 0 ? parts.join(', ') : 'Disabled';
+      case 'payment-methods': return 'Configure methods';
       case 'tax': return formData.taxEnabled ? `${formData.taxRate}% ${formData.taxName}` : 'Off';
-      case 'integrations': return 'Coming soon';
       default: return '';
     }
   };
@@ -9770,6 +10329,11 @@ function SettingsView({ settings, setSettings }: {
               </form>
             </CardContent>
           </Card>
+        )}
+
+        {/* Payment Methods Settings */}
+        {activeCategory === 'payment-methods' && (
+          <PaymentMethodsSettings />
         )}
 
         {/* Tax Settings */}

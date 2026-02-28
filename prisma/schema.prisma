@@ -134,6 +134,41 @@ model SystemSettings {
   @@map("system_settings")
 }
 
+// Payment Methods - Online and Offline
+model PaymentMethod {
+  id                String   @id @default(cuid())
+  name              String   // e.g., "Chapa", "Telebirr", "Bank Transfer", "Cash"
+  type              String   // ONLINE, OFFLINE
+  provider          String?  // e.g., "chapa", "telebirr", "cbe", "awash"
+  
+  // For online payments
+  apiKey            String?
+  secretKey         String?
+  merchantId        String?
+  callbackUrl       String?
+  baseUrl           String?
+  
+  // Bank details for offline bank transfer
+  bankName          String?
+  accountNumber     String?
+  accountHolderName String?
+  
+  // Common settings
+  instructions      String?  // Payment instructions for tenants
+  isActive          Boolean  @default(true)
+  displayOrder      Int      @default(0)
+  
+  // Fees
+  feeType           String   @default("NONE")  // NONE, PERCENTAGE, FIXED
+  feeAmount         Float    @default(0)
+  feePercent        Float    @default(0)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("payment_methods")
+}
+
 model Property {
   id            String   @id @default(cuid())
   name          String
