@@ -438,7 +438,7 @@ export default function PropertyManagementSystem() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-6">
-          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} payments={payments} contracts={contracts} invoices={invoices} terminations={terminations} />}
+          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} payments={payments} contracts={contracts} invoices={invoices} terminations={terminations} units={units} tenants={tenants} />}
           {currentView === 'users' && <UsersView users={users} setUsers={setUsers} />}
           {currentView === 'properties' && <PropertiesView properties={properties} setProperties={setProperties} />}
           {currentView === 'assignments' && <AssignmentsView assignments={assignments} setAssignments={setAssignments} users={users} properties={properties} />}
@@ -794,7 +794,7 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 // Dashboard View
-function DashboardView({ stats, user, assignments, properties, onNavigate, payments, contracts, invoices, terminations }: { 
+function DashboardView({ stats, user, assignments, properties, onNavigate, payments, contracts, invoices, terminations, units, tenants }: { 
   stats: DashboardStats | null; 
   user: User | null;
   assignments: PropertyAssignment[];
@@ -804,6 +804,8 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
   contracts: Contract[];
   invoices: Invoice[];
   terminations: ContractTerminationRequest[];
+  units: Unit[];
+  tenants: Tenant[];
 }) {
   if (!stats) return <div>Loading...</div>;
 
@@ -817,6 +819,23 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
         contracts={contracts} 
         invoices={invoices} 
         terminations={terminations}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
+  // If user is PROPERTY_ADMIN, show specialized Property Admin Dashboard
+  if (user?.role === 'PROPERTY_ADMIN') {
+    return (
+      <PropertyAdminDashboard 
+        stats={stats} 
+        user={user} 
+        assignments={assignments}
+        properties={properties}
+        contracts={contracts}
+        tenants={tenants}
+        units={units}
+        invoices={invoices}
         onNavigate={onNavigate}
       />
     );
@@ -1372,6 +1391,451 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// Property Admin Dashboard - Specialized for Property Admin Role
+function PropertyAdminDashboard({ 
+  stats, 
+  user, 
+  assignments, 
+  properties, 
+  contracts, 
+  tenants,
+  units,
+  invoices,
+  onNavigate 
+}: { 
+  stats: DashboardStats | null; 
+  user: User | null;
+  assignments: PropertyAssignment[];
+  properties: Property[];
+  contracts: Contract[];
+  tenants: Tenant[];
+  units: Unit[];
+  invoices: Invoice[];
+  onNavigate: (view: string) => void;
+}) {
+  // Get assigned properties for this Property Admin
+  const userAssignedPropertyIds = assignments
+    .filter(a => a.userId === user?.id)
+    .map(a => a.propertyId);
+  
+  const assignedProperties = properties.filter(p => userAssignedPropertyIds.includes(p.id));
+
+  // Filter units by assigned properties
+  const assignedUnits = units.filter(u => userAssignedPropertyIds.includes(u.propertyId));
+  const occupiedUnits = assignedUnits.filter(u => u.status === 'occupied');
+  const availableUnits = assignedUnits.filter(u => u.status === 'available');
+
+  // Filter contracts by assigned properties
+  const assignedContracts = contracts.filter(c => userAssignedPropertyIds.includes(c.propertyId));
+  const activeContracts = assignedContracts.filter(c => c.status === 'ACTIVE');
+  const pendingContracts = assignedContracts.filter(c => c.status === 'UNDER_REVIEW');
+  const expiringContracts = assignedContracts.filter(c => {
+    const endDate = new Date(c.endDate);
+    const now = new Date();
+    const daysUntilExpiry = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return daysUntilExpiry > 0 && daysUntilExpiry <= 30;
+  });
+
+  // Filter invoices by assigned properties
+  const assignedInvoices = invoices.filter(inv => 
+    inv.contract && userAssignedPropertyIds.includes(inv.contract.propertyId)
+  );
+  const pendingInvoices = assignedInvoices.filter(i => i.status === 'PENDING');
+  const overdueInvoices = assignedInvoices.filter(i => i.status === 'OVERDUE');
+
+  // Calculate occupancy rate
+  const occupancyRate = assignedUnits.length > 0 
+    ? Math.round((occupiedUnits.length / assignedUnits.length) * 100) 
+    : 0;
+
+  // Calculate monthly rent potential
+  const monthlyRentPotential = occupiedUnits.reduce((sum, u) => {
+    const contract = assignedContracts.find(c => 
+      c.status === 'ACTIVE' && 
+      c.contractUnits?.some(cu => cu.unitId === u.id)
+    );
+    return sum + (contract?.monthlyRent || u.monthlyRent);
+  }, 0);
+
+  // Recent tenants for assigned properties
+  const recentTenants = tenants
+    .filter(t => {
+      const tenantContracts = contracts.filter(c => c.tenantId === t.id);
+      return tenantContracts.some(c => userAssignedPropertyIds.includes(c.propertyId));
+    })
+    .slice(0, 5);
+
+  if (assignedProperties.length === 0) {
+    return (
+      <div className="space-y-6">
+        {/* Welcome Header */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-500/10 via-emerald-500/5 to-green-500/5 p-6 border border-teal-500/10">
+          <div className="relative z-10">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">
+              Welcome, {user?.name}! 👋
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              You haven't been assigned to any properties yet.
+            </p>
+          </div>
+        </div>
+
+        <Card className="border-dashed border-2 border-teal-500/30 bg-teal-50/50 dark:bg-teal-950/20">
+          <CardContent className="p-12 text-center">
+            <div className="flex justify-center gap-3 mb-4">
+              <div className="p-4 rounded-full bg-teal-100 dark:bg-teal-900/50">
+                <Building2 className="h-10 w-10 text-teal-600 dark:text-teal-400" />
+              </div>
+            </div>
+            <h3 className="text-xl font-semibold mb-2">No Properties Assigned</h3>
+            <p className="text-muted-foreground max-w-md mx-auto mb-4">
+              Contact your system administrator or property owner to get assigned to properties you can manage.
+            </p>
+            <Button onClick={() => onNavigate('assignments')} variant="outline">
+              View Assignments
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Welcome Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-500/10 via-emerald-500/5 to-green-500/5 p-6 border border-teal-500/10">
+        <div className="relative z-10">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">
+            Property Admin Dashboard 👋
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Managing {assignedProperties.length} {assignedProperties.length === 1 ? 'property' : 'properties'} with {assignedUnits.length} units
+          </p>
+        </div>
+        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl" />
+        <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl" />
+      </div>
+
+      {/* My Assigned Properties */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/50">
+              <Building2 className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">My Assigned Properties</CardTitle>
+              <CardDescription>Properties under your management</CardDescription>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => onNavigate('properties')}>
+            View Details
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {assignedProperties.map((property) => {
+              const propertyUnits = assignedUnits.filter(u => u.propertyId === property.id);
+              const propertyOccupied = propertyUnits.filter(u => u.status === 'occupied').length;
+              const propertyAvailable = propertyUnits.filter(u => u.status === 'available').length;
+              const propertyOccupancy = propertyUnits.length > 0 
+                ? Math.round((propertyOccupied / propertyUnits.length) * 100) 
+                : 0;
+
+              return (
+                <div 
+                  key={property.id} 
+                  className="group p-4 rounded-xl bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-teal-500/30 transition-all cursor-pointer"
+                  onClick={() => onNavigate('units')}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/50 group-hover:bg-teal-200 dark:group-hover:bg-teal-800 transition-colors">
+                      <Building className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <Badge variant="outline" className="text-xs bg-background">
+                      {property.city}
+                    </Badge>
+                  </div>
+                  <h3 className="font-semibold text-base mb-1 truncate">{property.name}</h3>
+                  <p className="text-sm text-muted-foreground mb-3 truncate">{property.address}</p>
+                  
+                  {/* Mini Stats */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2 rounded-lg bg-background">
+                      <p className="text-lg font-bold text-teal-600">{propertyUnits.length}</p>
+                      <p className="text-xs text-muted-foreground">Units</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-background">
+                      <p className="text-lg font-bold text-green-600">{propertyOccupied}</p>
+                      <p className="text-xs text-muted-foreground">Occupied</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-background">
+                      <p className="text-lg font-bold text-amber-600">{propertyAvailable}</p>
+                      <p className="text-xs text-muted-foreground">Available</p>
+                    </div>
+                  </div>
+                  
+                  {/* Occupancy Bar */}
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-muted-foreground">Occupancy</span>
+                      <span className="font-medium">{propertyOccupancy}%</span>
+                    </div>
+                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
+                        style={{ width: `${propertyOccupancy}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Metrics */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/30 dark:to-emerald-950/30 border-teal-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-teal-600 font-medium">Occupancy Rate</p>
+                <p className="text-2xl font-bold text-teal-700 dark:text-teal-300">{occupancyRate}%</p>
+                <p className="text-xs text-teal-600/70">{occupiedUnits.length} of {assignedUnits.length} units</p>
+              </div>
+              <div className="p-3 rounded-lg bg-teal-100 dark:bg-teal-900/50">
+                <Home className="h-6 w-6 text-teal-600 dark:text-teal-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30 border-emerald-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-emerald-600 font-medium">Active Contracts</p>
+                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{activeContracts.length}</p>
+                <p className="text-xs text-emerald-600/70">{pendingContracts.length} pending review</p>
+              </div>
+              <div className="p-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/50">
+                <FileText className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border-amber-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-amber-600 font-medium">Monthly Revenue</p>
+                <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">
+                  {monthlyRentPotential.toLocaleString()} ETB
+                </p>
+                <p className="text-xs text-amber-600/70">Potential collections</p>
+              </div>
+              <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+                <DollarSign className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-950/30 dark:to-red-950/30 border-rose-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-rose-600 font-medium">Overdue Invoices</p>
+                <p className="text-2xl font-bold text-rose-700 dark:text-rose-300">{overdueInvoices.length}</p>
+                <p className="text-xs text-rose-600/70">Need follow-up</p>
+              </div>
+              <div className="p-3 rounded-lg bg-rose-100 dark:bg-rose-900/50">
+                <AlertTriangle className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Alerts Section */}
+      {(expiringContracts.length > 0 || overdueInvoices.length > 0 || pendingContracts.length > 0) && (
+        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-amber-100 dark:bg-amber-900/50">
+                <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-amber-800 dark:text-amber-200">Attention Required</h3>
+                <div className="flex flex-wrap gap-3 text-sm text-amber-700 dark:text-amber-300 mt-1">
+                  {expiringContracts.length > 0 && (
+                    <span>{expiringContracts.length} contract(s) expiring within 30 days</span>
+                  )}
+                  {overdueInvoices.length > 0 && (
+                    <span>{overdueInvoices.length} overdue invoice(s)</span>
+                  )}
+                  {pendingContracts.length > 0 && (
+                    <span>{pendingContracts.length} contract(s) awaiting payment</span>
+                  )}
+                </div>
+              </div>
+              <Button 
+                onClick={() => onNavigate('contracts')}
+                className="bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                Review
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Two Column Layout */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Contracts Expiring Soon */}
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/50">
+                <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Contracts Expiring Soon</CardTitle>
+                <CardDescription>Within the next 30 days</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {expiringContracts.length > 0 ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {expiringContracts.map((contract) => {
+                  const endDate = new Date(contract.endDate);
+                  const now = new Date();
+                  const daysUntil = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  
+                  return (
+                    <div key={contract.id} className="p-3 rounded-lg bg-muted/50 border">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{contract.tenant?.fullName}</p>
+                          <p className="text-sm text-muted-foreground">{contract.property?.name}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="outline" className={daysUntil <= 7 ? 'border-red-500 text-red-600' : 'border-orange-500 text-orange-600'}>
+                            {daysUntil} days left
+                          </Badge>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {endDate.toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Check className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No contracts expiring soon</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Tenants */}
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/50">
+                  <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Recent Tenants</CardTitle>
+                  <CardDescription>In your properties</CardDescription>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => onNavigate('tenants')}>
+                View All
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {recentTenants.length > 0 ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {recentTenants.map((tenant) => (
+                  <div key={tenant.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback className="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400">
+                          {tenant.fullName?.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium text-sm">{tenant.fullName}</p>
+                        <p className="text-xs text-muted-foreground">{tenant.phone}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(tenant.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No tenants yet</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <Card className="border-border/50 shadow-sm bg-gradient-to-br from-teal-500/5 to-emerald-500/5">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Zap className="h-5 w-5 text-teal-600" />
+            Quick Actions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <QuickActionButton 
+              icon={<DoorOpen className="h-4 w-4" />} 
+              label="Manage Units" 
+              color="teal" 
+              onClick={() => onNavigate('units')} 
+            />
+            <QuickActionButton 
+              icon={<Users className="h-4 w-4" />} 
+              label="Add Tenant" 
+              color="purple" 
+              onClick={() => onNavigate('tenants')} 
+            />
+            <QuickActionButton 
+              icon={<FileText className="h-4 w-4" />} 
+              label="New Contract" 
+              color="orange" 
+              onClick={() => onNavigate('contracts')} 
+            />
+            <QuickActionButton 
+              icon={<Receipt className="h-4 w-4" />} 
+              label="View Invoices" 
+              color="green" 
+              onClick={() => onNavigate('invoices')} 
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
