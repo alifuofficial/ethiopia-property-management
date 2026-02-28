@@ -31,6 +31,7 @@ import {
   CreditCardIcon, ArrowLeftRight, Wrench, BellRing, Database, Layers, Globe, CalendarDays, Percent
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { QRCodeSVG } from 'qrcode.react';
 
 // Dynamically import recharts to reduce initial bundle size
 const AreaChart = dynamic(() => import('recharts').then(mod => mod.AreaChart), { ssr: false });
@@ -436,7 +437,7 @@ export default function PropertyManagementSystem() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-6">
-          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} />}
+          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} payments={payments} contracts={contracts} invoices={invoices} terminations={terminations} />}
           {currentView === 'users' && <UsersView users={users} setUsers={setUsers} />}
           {currentView === 'properties' && <PropertiesView properties={properties} setProperties={setProperties} />}
           {currentView === 'assignments' && <AssignmentsView assignments={assignments} setAssignments={setAssignments} users={users} properties={properties} />}
@@ -792,14 +793,33 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 // Dashboard View
-function DashboardView({ stats, user, assignments, properties, onNavigate }: { 
+function DashboardView({ stats, user, assignments, properties, onNavigate, payments, contracts, invoices, terminations }: { 
   stats: DashboardStats | null; 
   user: User | null;
   assignments: PropertyAssignment[];
   properties: Property[];
   onNavigate: (view: string) => void;
+  payments: Payment[];
+  contracts: Contract[];
+  invoices: Invoice[];
+  terminations: ContractTerminationRequest[];
 }) {
   if (!stats) return <div>Loading...</div>;
+
+  // If user is ACCOUNTANT, show specialized Accountant Dashboard
+  if (user?.role === 'ACCOUNTANT') {
+    return (
+      <AccountantDashboard 
+        stats={stats} 
+        user={user} 
+        payments={payments} 
+        contracts={contracts} 
+        invoices={invoices} 
+        terminations={terminations}
+        onNavigate={onNavigate}
+      />
+    );
+  }
 
   // Get assigned properties for Property Admin
   const userAssignedPropertyIds = assignments
@@ -1352,6 +1372,770 @@ function DashboardView({ stats, user, assignments, properties, onNavigate }: {
         </Card>
       )}
     </div>
+  );
+}
+
+// Accountant Dashboard - Specialized for Accountant Role
+function AccountantDashboard({ 
+  stats, 
+  user, 
+  payments, 
+  contracts, 
+  invoices, 
+  terminations,
+  onNavigate 
+}: { 
+  stats: DashboardStats | null; 
+  user: User | null;
+  payments: Payment[];
+  contracts: Contract[];
+  invoices: Invoice[];
+  terminations: ContractTerminationRequest[];
+  onNavigate: (view: string) => void;
+}) {
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  // Filter pending payments that need approval
+  const pendingPayments = payments.filter(p => p.status === 'PENDING');
+  const pendingPaymentsAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
+  
+  // Contracts under review (waiting for payment verification)
+  const contractsUnderReview = contracts.filter(c => c.status === 'UNDER_REVIEW');
+  
+  // Termination requests pending accountant approval
+  const pendingTerminations = terminations.filter(t => t.status === 'PENDING');
+  
+  // Recent approved payments
+  const recentApprovedPayments = payments
+    .filter(p => p.status === 'APPROVED')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+
+  // Handle payment approval
+  const handleApprove = async (paymentId: string) => {
+    try {
+      await api(`/payments/${paymentId}/approve`, { method: 'POST' });
+      toast({ title: 'Success', description: 'Payment approved successfully' });
+      // Refresh would happen via parent state update
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to approve', variant: 'destructive' });
+    }
+  };
+
+  // Handle payment rejection
+  const handleReject = async () => {
+    if (!selectedPayment || !rejectionReason) return;
+    try {
+      await api(`/payments/${selectedPayment.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: rejectionReason }),
+      });
+      toast({ title: 'Success', description: 'Payment rejected' });
+      setIsRejectDialogOpen(false);
+      setSelectedPayment(null);
+      setRejectionReason('');
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to reject', variant: 'destructive' });
+    }
+  };
+
+  // Get payment method icon
+  const getPaymentMethodIcon = (method: string | null) => {
+    switch(method) {
+      case 'chapa': return <CreditCard className="h-4 w-4" />;
+      case 'telebirr': return <Phone className="h-4 w-4" />;
+      case 'bank_transfer': return <Building className="h-4 w-4" />;
+      case 'cash': return <Banknote className="h-4 w-4" />;
+      default: return <Wallet className="h-4 w-4" />;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Welcome Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-500/10 via-blue-500/5 to-indigo-500/5 p-6 border border-cyan-500/10">
+        <div className="relative z-10">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+            Accountant Dashboard 👋
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Welcome back, {user?.name}! Review and verify payments, manage financial records.
+          </p>
+        </div>
+        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-blue-500/5 blur-3xl" />
+      </div>
+
+      {/* Urgent Alerts */}
+      {(pendingPayments.length > 0 || contractsUnderReview.length > 0) && (
+        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-amber-100 dark:bg-amber-900/50">
+                <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-amber-800 dark:text-amber-200">Action Required</h3>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  {pendingPayments.length > 0 && `${pendingPayments.length} payment(s) awaiting approval`}
+                  {pendingPayments.length > 0 && contractsUnderReview.length > 0 && ' • '}
+                  {contractsUnderReview.length > 0 && `${contractsUnderReview.length} contract(s) under review`}
+                </p>
+              </div>
+              <Button 
+                onClick={() => onNavigate('payments')}
+                className="bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                Review Now
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Financial Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-950/30 dark:to-blue-950/30 border-cyan-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-cyan-600 font-medium">Pending Payments</p>
+                <p className="text-2xl font-bold text-cyan-700 dark:text-cyan-300">{pendingPayments.length}</p>
+                <p className="text-xs text-cyan-600/70">{pendingPaymentsAmount.toLocaleString()} ETB</p>
+              </div>
+              <div className="p-3 rounded-lg bg-cyan-100 dark:bg-cyan-900/50">
+                <Clock className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium">Total Revenue</p>
+                <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                  {(stats?.totalRevenue || 0).toLocaleString()} ETB
+                </p>
+                <p className="text-xs text-green-600/70">Approved payments</p>
+              </div>
+              <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/50">
+                <DollarSign className="h-6 w-6 text-green-600 dark:text-green-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 border-purple-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Under Review</p>
+                <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{contractsUnderReview.length}</p>
+                <p className="text-xs text-purple-600/70">Contracts pending</p>
+              </div>
+              <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/50">
+                <FileText className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-rose-50 to-pink-50 dark:from-rose-950/30 dark:to-pink-950/30 border-rose-200/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-rose-600 font-medium">Termination Requests</p>
+                <p className="text-2xl font-bold text-rose-700 dark:text-rose-300">{pendingTerminations.length}</p>
+                <p className="text-xs text-rose-600/70">Awaiting review</p>
+              </div>
+              <div className="p-3 rounded-lg bg-rose-100 dark:bg-rose-900/50">
+                <ArrowRightLeft className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Payment Verification Queue */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+              <FileCheck className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Payment Verification Queue</CardTitle>
+              <CardDescription>{pendingPayments.length} payments awaiting your approval</CardDescription>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => onNavigate('payments')}>
+            View All Payments
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {pendingPayments.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {pendingPayments.slice(0, 10).map((payment) => (
+                <div key={payment.id} className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors border">
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600">
+                      {getPaymentMethodIcon(payment.paymentMethod)}
+                    </div>
+                    <div>
+                      <p className="font-medium">{payment.contract?.tenant?.fullName || 'Unknown Tenant'}</p>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(payment.createdAt).toLocaleDateString()}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          {getPaymentMethodIcon(payment.paymentMethod)}
+                          {payment.paymentMethod || 'Not specified'}
+                        </span>
+                      </div>
+                      {payment.transactionId && (
+                        <p className="text-xs text-muted-foreground mt-1">TXN: {payment.transactionId}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="font-bold text-lg text-cyan-600 dark:text-cyan-400">
+                        {payment.amount.toLocaleString()} ETB
+                      </p>
+                      <Badge variant="outline" className="text-amber-600 border-amber-300">
+                        {payment.paymentType}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          setSelectedPayment(payment);
+                          setIsDetailDialogOpen(true);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => handleApprove(payment.id)}
+                      >
+                        <Check className="h-4 w-4 mr-1" /> Approve
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                        onClick={() => {
+                          setSelectedPayment(payment);
+                          setIsRejectDialogOpen(true);
+                        }}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="flex justify-center gap-3 mb-4">
+                <div className="p-3 rounded-full bg-green-100 dark:bg-green-900/50">
+                  <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+                </div>
+              </div>
+              <p className="text-muted-foreground font-medium">All caught up!</p>
+              <p className="text-sm text-muted-foreground">No payments pending approval</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Two Column Layout: Contracts Under Review & Recent Approved */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Contracts Under Review */}
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/50">
+                <FileText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Contracts Under Review</CardTitle>
+                <CardDescription>Awaiting payment verification</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {contractsUnderReview.length > 0 ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {contractsUnderReview.map((contract) => (
+                  <div key={contract.id} className="p-3 rounded-lg bg-muted/50 border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{contract.tenant?.fullName || 'Unknown'}</p>
+                        <p className="text-sm text-muted-foreground">{contract.property?.name}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-purple-600 dark:text-purple-400">
+                          {contract.monthlyRent.toLocaleString()} ETB/mo
+                        </p>
+                        <Badge variant="outline" className="text-purple-600 border-purple-300">
+                          Under Review
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No contracts under review</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Approved Payments */}
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/50">
+                <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Recently Approved</CardTitle>
+                <CardDescription>Last 5 approved payments</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {recentApprovedPayments.length > 0 ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {recentApprovedPayments.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded bg-green-100 dark:bg-green-900/50">
+                        {getPaymentMethodIcon(payment.paymentMethod)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{payment.contract?.tenant?.fullName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(payment.approvedAt || payment.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="font-semibold text-green-600 dark:text-green-400">
+                      {payment.amount.toLocaleString()} ETB
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Check className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No recently approved payments</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Invoices Section with QR Codes */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/50">
+              <Receipt className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Invoices Overview</CardTitle>
+              <CardDescription>{invoices.length} total invoices with QR codes</CardDescription>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => onNavigate('invoices')}>
+            View All Invoices
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {invoices.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {invoices.slice(0, 6).map((invoice) => (
+                <ModernInvoiceCard 
+                  key={invoice.id} 
+                  invoice={invoice}
+                  onClick={() => onNavigate('invoices')}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Receipt className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No invoices available</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Quick Actions for Accountant */}
+      <Card className="border-border/50 shadow-sm bg-gradient-to-br from-cyan-500/5 to-blue-500/5">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Zap className="h-5 w-5 text-cyan-600" />
+            Quick Actions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <QuickActionButton 
+              icon={<Clock className="h-4 w-4" />} 
+              label="Pending Payments" 
+              color="teal" 
+              onClick={() => onNavigate('payments')} 
+            />
+            <QuickActionButton 
+              icon={<FileText className="h-4 w-4" />} 
+              label="Contracts" 
+              color="purple" 
+              onClick={() => onNavigate('contracts')} 
+            />
+            <QuickActionButton 
+              icon={<Receipt className="h-4 w-4" />} 
+              label="Invoices" 
+              color="orange" 
+              onClick={() => onNavigate('invoices')} 
+            />
+            <QuickActionButton 
+              icon={<ArrowRightLeft className="h-4 w-4" />} 
+              label="Terminations" 
+              color="green" 
+              onClick={() => onNavigate('terminations')} 
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment Detail Dialog */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-cyan-600" />
+              Payment Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedPayment && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-sm">Tenant</Label>
+                  <p className="font-medium">{selectedPayment.contract?.tenant?.fullName}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-sm">Amount</Label>
+                  <p className="font-semibold text-cyan-600">{selectedPayment.amount.toLocaleString()} ETB</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-sm">Payment Type</Label>
+                  <p>{selectedPayment.paymentType}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-sm">Method</Label>
+                  <p>{selectedPayment.paymentMethod || 'Not specified'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-sm">Transaction ID</Label>
+                  <p>{selectedPayment.transactionId || 'N/A'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-sm">Date</Label>
+                  <p>{new Date(selectedPayment.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+              {selectedPayment.receiptUrl && (
+                <div>
+                  <Label className="text-muted-foreground text-sm">Receipt</Label>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-1"
+                    onClick={() => window.open(selectedPayment.receiptUrl!, '_blank')}
+                  >
+                    <Eye className="h-4 w-4 mr-1" /> View Receipt
+                  </Button>
+                </div>
+              )}
+              {selectedPayment.notes && (
+                <div>
+                  <Label className="text-muted-foreground text-sm">Notes</Label>
+                  <p className="text-sm bg-muted/50 p-2 rounded">{selectedPayment.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>Close</Button>
+            {selectedPayment && selectedPayment.status === 'PENDING' && (
+              <>
+                <Button 
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    handleApprove(selectedPayment.id);
+                    setIsDetailDialogOpen(false);
+                  }}
+                >
+                  <Check className="h-4 w-4 mr-1" /> Approve
+                </Button>
+                <Button 
+                  variant="destructive"
+                  onClick={() => {
+                    setIsDetailDialogOpen(false);
+                    setIsRejectDialogOpen(true);
+                  }}
+                >
+                  <XCircle className="h-4 w-4 mr-1" /> Reject
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Payment Dialog */}
+      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="h-5 w-5" />
+              Reject Payment
+            </DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this payment.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Enter rejection reason..."
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              className="border-red-200 focus:border-red-500"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRejectDialogOpen(false)}>Cancel</Button>
+            <Button 
+              variant="destructive"
+              onClick={handleReject}
+              disabled={!rejectionReason}
+            >
+              Reject Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Modern Invoice Card with QR Code
+function ModernInvoiceCard({ invoice, onClick }: { invoice: Invoice; onClick?: () => void }) {
+  const [isQRDialogOpen, setIsQRDialogOpen] = useState(false);
+  
+  // Generate QR code data - contains invoice details as JSON
+  const qrData = JSON.stringify({
+    invoiceNumber: invoice.invoiceNumber,
+    amount: invoice.totalAmount || invoice.amount,
+    tenant: invoice.contract?.tenant?.fullName,
+    dueDate: new Date(invoice.dueDate).toLocaleDateString(),
+    status: invoice.status,
+    property: invoice.contract?.property?.name,
+    id: invoice.id,
+  });
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      PENDING: 'bg-amber-500',
+      PAID: 'bg-green-500',
+      PARTIALLY_PAID: 'bg-blue-500',
+      OVERDUE: 'bg-red-500',
+      CANCELLED: 'bg-gray-500',
+    };
+    return colors[status] || 'bg-gray-500';
+  };
+
+  const getStatusBg = (status: string) => {
+    const bgs: Record<string, string> = {
+      PENDING: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800',
+      PAID: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800',
+      PARTIALLY_PAID: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800',
+      OVERDUE: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800',
+      CANCELLED: 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800',
+    };
+    return bgs[status] || 'bg-gray-50 border-gray-200';
+  };
+
+  const getDaysUntilDue = () => {
+    const due = new Date(invoice.dueDate);
+    const now = new Date();
+    const diff = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diff;
+  };
+
+  const daysUntilDue = getDaysUntilDue();
+
+  return (
+    <>
+      <div 
+        className={`group relative overflow-hidden rounded-xl border ${getStatusBg(invoice.status)} p-4 hover:shadow-lg transition-all duration-300 cursor-pointer`}
+        onClick={onClick}
+      >
+        {/* QR Code Section */}
+        <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-100 transition-opacity">
+          <QRCodeSVG 
+            value={qrData} 
+            size={50}
+            level="L"
+            bgColor="transparent"
+            fgColor="currentColor"
+            className="text-muted-foreground"
+          />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${getStatusColor(invoice.status)} animate-pulse`} />
+            <span className="text-xs font-mono text-muted-foreground">
+              #{invoice.invoiceNumber?.slice(-8) || 'N/A'}
+            </span>
+          </div>
+          <Badge 
+            variant="outline" 
+            className={`text-xs ${
+              invoice.status === 'PAID' ? 'border-green-500 text-green-600' :
+              invoice.status === 'OVERDUE' ? 'border-red-500 text-red-600' :
+              invoice.status === 'PENDING' ? 'border-amber-500 text-amber-600' :
+              'border-blue-500 text-blue-600'
+            }`}
+          >
+            {invoice.status.replace('_', ' ')}
+          </Badge>
+        </div>
+
+        {/* Tenant & Property */}
+        <div className="mb-3">
+          <p className="font-semibold text-sm truncate">{invoice.contract?.tenant?.fullName || 'Unknown'}</p>
+          <p className="text-xs text-muted-foreground truncate">{invoice.contract?.property?.name}</p>
+        </div>
+
+        {/* Amount */}
+        <div className="flex items-end justify-between mb-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Amount</p>
+            <p className="text-xl font-bold text-foreground">
+              {(invoice.totalAmount || invoice.amount).toLocaleString()} ETB
+            </p>
+          </div>
+          {invoice.taxAmount > 0 && (
+            <p className="text-xs text-muted-foreground">
+              +{invoice.taxAmount.toLocaleString()} tax
+            </p>
+          )}
+        </div>
+
+        {/* Due Date */}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            Due: {new Date(invoice.dueDate).toLocaleDateString()}
+          </span>
+          {invoice.status === 'PENDING' && (
+            <span className={`font-medium ${daysUntilDue < 0 ? 'text-red-600' : daysUntilDue <= 3 ? 'text-amber-600' : 'text-foreground'}`}>
+              {daysUntilDue < 0 ? `${Math.abs(daysUntilDue)}d overdue` : daysUntilDue === 0 ? 'Due today' : `${daysUntilDue}d left`}
+            </span>
+          )}
+        </div>
+
+        {/* QR Button */}
+        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-7 text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsQRDialogOpen(true);
+            }}
+          >
+            <svg className="h-3 w-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" />
+            </svg>
+            Show QR
+          </Button>
+          <div className="flex items-center gap-1">
+            {invoice.paidAmount > 0 && invoice.paidAmount < invoice.amount && (
+              <span className="text-xs text-blue-600">
+                {invoice.paidAmount.toLocaleString()} paid
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* QR Code Dialog */}
+      <Dialog open={isQRDialogOpen} onOpenChange={setIsQRDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-orange-600" />
+              Invoice QR Code
+            </DialogTitle>
+            <DialogDescription>
+              Scan this QR code to view invoice details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center py-6">
+            <div className="p-4 bg-white rounded-2xl shadow-lg border">
+              <QRCodeSVG 
+                value={qrData}
+                size={200}
+                level="H"
+                bgColor="#ffffff"
+                fgColor="#000000"
+                includeMargin
+              />
+            </div>
+            <div className="mt-4 text-center">
+              <p className="font-mono text-sm text-muted-foreground">#{invoice.invoiceNumber}</p>
+              <p className="font-semibold text-lg mt-1">{(invoice.totalAmount || invoice.amount).toLocaleString()} ETB</p>
+              <p className="text-sm text-muted-foreground">{invoice.contract?.tenant?.fullName}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQRDialogOpen(false)}>Close</Button>
+            <Button onClick={() => {
+              navigator.clipboard.writeText(qrData);
+              toast({ title: 'Copied', description: 'Invoice data copied to clipboard' });
+            }}>
+              Copy Data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -6359,77 +7143,13 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
       {/* Grid View */}
       {viewMode === 'grid' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredInvoices.map((invoice) => {
-            const daysUntilDue = getDaysUntilDue(invoice.dueDate);
-            return (
-              <Card key={invoice.id} className="group hover:shadow-lg transition-all duration-300 border-orange-100 hover:border-orange-300">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600">
-                        <Receipt className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">{invoice.invoiceNumber}</CardTitle>
-                        <CardDescription className="text-xs">{invoice.contract?.tenant?.fullName}</CardDescription>
-                      </div>
-                    </div>
-                    {getStatusBadge(invoice.status)}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-orange-50">
-                    <span className="text-sm text-muted-foreground">Amount</span>
-                    <div className="text-right">
-                      <span className="font-bold text-orange-600">{invoice.amount.toLocaleString()} ETB</span>
-                      {invoice.taxAmount > 0 && (
-                        <p className="text-xs text-muted-foreground">+ {invoice.taxAmount.toLocaleString()} tax</p>
-                      )}
-                    </div>
-                  </div>
-                  {invoice.taxAmount > 0 && (
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-rose-50">
-                      <span className="text-sm text-muted-foreground">Total with Tax</span>
-                      <span className="font-bold text-rose-600">{(invoice.totalAmount || invoice.amount + (invoice.taxAmount || 0)).toLocaleString()} ETB</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 text-sm">
-                    <Wallet className="h-4 w-4 text-muted-foreground" />
-                    <span>Paid: <span className="font-semibold text-green-600">{invoice.paidAmount?.toLocaleString() || 0} ETB</span></span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>Due: {new Date(invoice.dueDate).toLocaleDateString()}</span>
-                  </div>
-                  {invoice.status === 'PENDING' && (
-                    <div className={`flex items-center gap-2 text-sm ${daysUntilDue < 0 ? 'text-red-600' : daysUntilDue < 7 ? 'text-amber-600' : 'text-green-600'}`}>
-                      <Clock className="h-4 w-4" />
-                      <span>{daysUntilDue < 0 ? `${Math.abs(daysUntilDue)} days overdue` : `${daysUntilDue} days remaining`}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 pt-2 border-t">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedInvoice(invoice); setIsDetailDialogOpen(true); }}>
-                      <Eye className="h-4 w-4 mr-1" /> View
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="flex-1 text-orange-600 hover:bg-orange-50" 
-                      onClick={() => handleSendSms(invoice.id)}
-                      disabled={sendingSmsId === invoice.id}
-                    >
-                      {sendingSmsId === invoice.id ? (
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-600 border-t-transparent" />
-                      ) : (
-                        <MessageSquare className="h-4 w-4 mr-1" />
-                      )}
-                      SMS
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {filteredInvoices.map((invoice) => (
+            <ModernInvoiceCard 
+              key={invoice.id} 
+              invoice={invoice}
+              onClick={() => { setSelectedInvoice(invoice); setIsDetailDialogOpen(true); }}
+            />
+          ))}
           {filteredInvoices.length === 0 && (
             <div className="col-span-full text-center py-12">
               <Receipt className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
@@ -6500,7 +7220,7 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
 
       {/* Detail Dialog */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-orange-600" />
@@ -6509,10 +7229,29 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
           </DialogHeader>
           {selectedInvoice && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-orange-100 to-amber-100">
-                <div>
-                  <h3 className="text-xl font-bold">{selectedInvoice.invoiceNumber}</h3>
-                  <p className="text-muted-foreground">{selectedInvoice.contract?.tenant?.fullName}</p>
+              {/* Header with QR Code */}
+              <div className="flex items-start justify-between p-4 rounded-xl bg-gradient-to-r from-orange-100 to-amber-100 dark:from-orange-950/30 dark:to-amber-950/30">
+                <div className="flex items-center gap-4">
+                  <div className="p-2 bg-white dark:bg-gray-900 rounded-lg shadow-md">
+                    <QRCodeSVG 
+                      value={JSON.stringify({
+                        invoiceNumber: selectedInvoice.invoiceNumber,
+                        amount: selectedInvoice.totalAmount || selectedInvoice.amount,
+                        tenant: selectedInvoice.contract?.tenant?.fullName,
+                        dueDate: new Date(selectedInvoice.dueDate).toLocaleDateString(),
+                        status: selectedInvoice.status,
+                        property: selectedInvoice.contract?.property?.name,
+                        id: selectedInvoice.id,
+                      })}
+                      size={80}
+                      level="M"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">{selectedInvoice.invoiceNumber}</h3>
+                    <p className="text-muted-foreground">{selectedInvoice.contract?.tenant?.fullName}</p>
+                    <p className="text-sm text-muted-foreground">{selectedInvoice.contract?.property?.name}</p>
+                  </div>
                 </div>
                 {getStatusBadge(selectedInvoice.status)}
               </div>
@@ -6574,6 +7313,26 @@ function InvoicesView({ invoices, setInvoices, contracts }: {
               )}
             </div>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>Close</Button>
+            {selectedInvoice && (
+              <Button onClick={() => {
+                const qrData = JSON.stringify({
+                  invoiceNumber: selectedInvoice.invoiceNumber,
+                  amount: selectedInvoice.totalAmount || selectedInvoice.amount,
+                  tenant: selectedInvoice.contract?.tenant?.fullName,
+                  dueDate: new Date(selectedInvoice.dueDate).toLocaleDateString(),
+                  status: selectedInvoice.status,
+                  property: selectedInvoice.contract?.property?.name,
+                  id: selectedInvoice.id,
+                });
+                navigator.clipboard.writeText(qrData);
+                toast({ title: 'Copied', description: 'Invoice data copied to clipboard' });
+              }}>
+                Copy QR Data
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
