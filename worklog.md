@@ -171,3 +171,60 @@ Stage Summary:
 - Tenant update (PUT) endpoint working - can update all tenant fields
 - Tenant delete (DELETE) endpoint working - prevents deletion if active contracts exist
 - All tenant CRUD operations now fully functional
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix tenant ID document image display
+
+Work Log:
+- Created /api/serve endpoint to serve uploaded files reliably
+- Updated upload API to return serve API URL instead of static file path
+- Added getImageUrl helper to convert old URL format to new API format
+- Updated tenant detail and edit dialogs to display images correctly
+- Added error handling with fallback for failed image loads
+- Added 'No ID document uploaded' placeholder when no document exists
+
+Stage Summary:
+- ID document images now display correctly in tenant view
+- Backward compatible with existing uploads using old URL format
+- Serve API handles file serving with proper content-type headers
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Fix tenant ID document update issue
+
+Work Log:
+- Fixed upload loading state - setIsUploading(false) now in correct place inside reader.onload finally block
+- Disabled Update/Create button during upload to prevent submitting before upload completes
+- Added console logging for debugging upload and update process
+- Improved tenant update API to handle fields more explicitly
+- Shows 'Uploading...' text on button while upload in progress
+
+Stage Summary:
+- Upload completes before form can be submitted
+- Button clearly shows "Uploading..." state
+- New ID document URL is properly saved to database
+- Updated ID document displays correctly in view mode
+
+---
+Task ID: 10
+Agent: Main Agent
+Task: Add Ethiopian calendar date picker for contract creation
+
+Work Log:
+- Created DualCalendarDatePicker component for selecting dates using either Gregorian or Ethiopian calendar
+- Added calendar type toggle (Gregorian/Ethiopian) for each date field
+- For Ethiopian calendar: shows Day, Month (with Amharic names), Year dropdowns
+- For Gregorian calendar: shows standard date input
+- Shows converted date in other calendar format below each date picker
+- Updated ContractsView to use the new DualCalendarDatePicker for start and end dates
+- Added startCalendarType and endCalendarType state to ContractsView
+
+Stage Summary:
+- Contract creation now supports both Gregorian and Ethiopian calendar date selection
+- Users can toggle between calendars for each date field independently
+- Ethiopian month names displayed in both English and Amharic
+- Converted date shown in the other calendar format for reference
+- Seamless conversion between Gregorian and Ethiopian dates

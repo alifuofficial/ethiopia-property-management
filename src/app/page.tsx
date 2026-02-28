@@ -39,7 +39,26 @@ import type {
   User, Property, Unit, Tenant, Contract, Invoice, Payment, 
   ContractTerminationRequest, PropertyAssignment, SystemSettings, DashboardStats 
 } from '@/types';
-import { gregorianToEthiopian, formatEthiopianDate, CalendarType } from '@/lib/ethiopian-calendar';
+import { 
+  gregorianToEthiopian, 
+  formatEthiopianDate, 
+  ethiopianToGregorian,
+  getEthiopianDaysInMonth,
+  ETHIOPIAN_MONTHS,
+  ETHIOPIAN_MONTHS_AMHARIC,
+  CalendarType,
+  EthiopianDate
+} from '@/lib/ethiopian-calendar';
+
+// Ethiopian month names (English and Amharic)
+const ETH_MONTHS_EN = [
+  'Meskerem', 'Tikimt', 'Hidar', 'Tahsas', 'Tir', 'Yekatit',
+  'Megabit', 'Miazia', 'Ginbot', 'Sene', 'Hamle', 'Nehase', 'Pagume'
+];
+const ETH_MONTHS_AM = [
+  'መስከረም', 'ጥቅምት', 'ኅዳር', 'ታኅሣሥ', 'ጥር', 'የካቲት',
+  'መጋቢት', 'ሚያዝያ', 'ግንቦት', 'ሰኔ', 'ሐምሌ', 'ነሐሴ', 'ጳጉሜ'
+];
 
 // API helper
 async function api<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -1374,6 +1393,187 @@ function StatsCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Dual Calendar Date Picker Component
+function DualCalendarDatePicker({
+  label,
+  value,
+  onChange,
+  calendarType,
+  onCalendarTypeChange,
+  required = false,
+  className = '',
+}: {
+  label: string;
+  value: string; // ISO date string (YYYY-MM-DD)
+  onChange: (date: string) => void;
+  calendarType: 'gregorian' | 'ethiopian';
+  onCalendarTypeChange: (type: 'gregorian' | 'ethiopian') => void;
+  required?: boolean;
+  className?: string;
+}) {
+  // Parse the ISO date to Ethiopian if needed
+  const getEthiopianFromDate = (isoDate: string): EthiopianDate | null => {
+    if (!isoDate) return null;
+    const [year, month, day] = isoDate.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return gregorianToEthiopian({ year, month, day });
+  };
+
+  const ethiopianDate = getEthiopianFromDate(value);
+
+  // Generate year options for Ethiopian calendar (current year +/- 10 years)
+  const currentEthYear = gregorianToEthiopian(new Date()).year;
+  const ethYearOptions = Array.from({ length: 21 }, (_, i) => currentEthYear - 10 + i);
+
+  // Generate day options based on month
+  const getDayOptions = (month: number, year: number) => {
+    const days = month === 13 ? (year % 4 === 3 ? 6 : 5) : 30;
+    return Array.from({ length: days }, (_, i) => i + 1);
+  };
+
+  // Handle Ethiopian date changes
+  const handleEthiopianChange = (type: 'day' | 'month' | 'year', newValue: number) => {
+    if (!ethiopianDate) {
+      // Initialize with current date if no date set
+      const today = gregorianToEthiopian(new Date());
+      const newEthDate = { ...today, [type]: newValue };
+      const greg = ethiopianToGregorian(newEthDate);
+      onChange(`${greg.year}-${String(greg.month).padStart(2, '0')}-${String(greg.day).padStart(2, '0')}`);
+      return;
+    }
+
+    const newEthDate = { ...ethiopianDate, [type]: newValue };
+    
+    // Validate day for the month
+    const maxDays = newEthDate.month === 13 
+      ? (newEthDate.year % 4 === 3 ? 6 : 5) 
+      : 30;
+    if (newEthDate.day > maxDays) {
+      newEthDate.day = maxDays;
+    }
+
+    const greg = ethiopianToGregorian(newEthDate);
+    onChange(`${greg.year}-${String(greg.month).padStart(2, '0')}-${String(greg.day).padStart(2, '0')}`);
+  };
+
+  return (
+    <div className={`space-y-2 ${className}`}>
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">
+          {label} {required && '*'}
+        </Label>
+        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+          <button
+            type="button"
+            onClick={() => onCalendarTypeChange('gregorian')}
+            className={`px-2 py-1 text-xs rounded-md transition-all ${
+              calendarType === 'gregorian' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Gregorian
+          </button>
+          <button
+            type="button"
+            onClick={() => onCalendarTypeChange('ethiopian')}
+            className={`px-2 py-1 text-xs rounded-md transition-all ${
+              calendarType === 'ethiopian' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Ethiopian
+          </button>
+        </div>
+      </div>
+
+      {calendarType === 'gregorian' ? (
+        <Input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+          className="border-emerald-500/20"
+        />
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {/* Day */}
+          <Select
+            value={ethiopianDate?.day?.toString() || ''}
+            onValueChange={(v) => handleEthiopianChange('day', parseInt(v))}
+          >
+            <SelectTrigger className="border-emerald-500/20">
+              <SelectValue placeholder="Day" />
+            </SelectTrigger>
+            <SelectContent>
+              {ethiopianDate && getDayOptions(ethiopianDate.month, ethiopianDate.year).map((day) => (
+                <SelectItem key={day} value={day.toString()}>
+                  {day}
+                </SelectItem>
+              ))}
+              {!ethiopianDate && Array.from({ length: 30 }, (_, i) => i + 1).map((day) => (
+                <SelectItem key={day} value={day.toString()}>
+                  {day}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Month */}
+          <Select
+            value={ethiopianDate?.month?.toString() || ''}
+            onValueChange={(v) => handleEthiopianChange('month', parseInt(v))}
+          >
+            <SelectTrigger className="border-emerald-500/20">
+              <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent>
+              {ETH_MONTHS_EN.map((month, index) => (
+                <SelectItem key={index + 1} value={(index + 1).toString()}>
+                  <div className="flex flex-col">
+                    <span>{month}</span>
+                    <span className="text-xs text-muted-foreground">{ETH_MONTHS_AM[index]}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Year */}
+          <Select
+            value={ethiopianDate?.year?.toString() || ''}
+            onValueChange={(v) => handleEthiopianChange('year', parseInt(v))}
+          >
+            <SelectTrigger className="border-emerald-500/20">
+              <SelectValue placeholder="Year" />
+            </SelectTrigger>
+            <SelectContent>
+              {ethYearOptions.map((year) => (
+                <SelectItem key={year} value={year.toString()}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Show converted date */}
+      {value && calendarType === 'ethiopian' && ethiopianDate && (
+        <p className="text-xs text-muted-foreground">
+          Gregorian: {new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+        </p>
+      )}
+      {value && calendarType === 'gregorian' && (
+        <p className="text-xs text-muted-foreground">
+          Ethiopian: {ethiopianDate ? formatEthiopianDate(ethiopianDate, 'long') : ''}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -4846,6 +5046,9 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  // Calendar type for date pickers
+  const [startCalendarType, setStartCalendarType] = useState<'gregorian' | 'ethiopian'>('gregorian');
+  const [endCalendarType, setEndCalendarType] = useState<'gregorian' | 'ethiopian'>('gregorian');
   const [formData, setFormData] = useState({
     tenantId: '',
     propertyId: '',
@@ -5028,15 +5231,23 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Start Date *</Label>
-                    <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} required className="border-emerald-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">End Date *</Label>
-                    <Input type="date" value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} required className="border-emerald-500/20" />
-                  </div>
+                <div className="space-y-4">
+                  <DualCalendarDatePicker
+                    label="Start Date"
+                    value={formData.startDate}
+                    onChange={(date) => setFormData({ ...formData, startDate: date })}
+                    calendarType={startCalendarType}
+                    onCalendarTypeChange={setStartCalendarType}
+                    required
+                  />
+                  <DualCalendarDatePicker
+                    label="End Date"
+                    value={formData.endDate}
+                    onChange={(date) => setFormData({ ...formData, endDate: date })}
+                    calendarType={endCalendarType}
+                    onCalendarTypeChange={setEndCalendarType}
+                    required
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
