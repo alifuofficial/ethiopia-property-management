@@ -438,7 +438,7 @@ export default function PropertyManagementSystem() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-6">
-          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} payments={payments} contracts={contracts} invoices={invoices} terminations={terminations} units={units} tenants={tenants} />}
+          {currentView === 'dashboard' && <DashboardView stats={stats} user={user} assignments={assignments} properties={properties} onNavigate={setCurrentView} payments={payments} contracts={contracts} invoices={invoices} terminations={terminations} units={units} tenants={tenants} onRefresh={loadData} />}
           {currentView === 'users' && <UsersView users={users} setUsers={setUsers} />}
           {currentView === 'properties' && <PropertiesView properties={properties} setProperties={setProperties} />}
           {currentView === 'assignments' && <AssignmentsView assignments={assignments} setAssignments={setAssignments} users={users} properties={properties} />}
@@ -794,8 +794,8 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 // Dashboard View
-function DashboardView({ stats, user, assignments, properties, onNavigate, payments, contracts, invoices, terminations, units, tenants }: { 
-  stats: DashboardStats | null; 
+function DashboardView({ stats, user, assignments, properties, onNavigate, payments, contracts, invoices, terminations, units, tenants, onRefresh }: {
+  stats: DashboardStats | null;
   user: User | null;
   assignments: PropertyAssignment[];
   properties: Property[];
@@ -806,20 +806,22 @@ function DashboardView({ stats, user, assignments, properties, onNavigate, payme
   terminations: ContractTerminationRequest[];
   units: Unit[];
   tenants: Tenant[];
+  onRefresh?: () => void;
 }) {
   if (!stats) return <div>Loading...</div>;
 
   // If user is ACCOUNTANT, show specialized Accountant Dashboard
   if (user?.role === 'ACCOUNTANT') {
     return (
-      <AccountantDashboard 
-        stats={stats} 
-        user={user} 
-        payments={payments} 
-        contracts={contracts} 
-        invoices={invoices} 
+      <AccountantDashboard
+        stats={stats}
+        user={user}
+        payments={payments}
+        contracts={contracts}
+        invoices={invoices}
         terminations={terminations}
         onNavigate={onNavigate}
+        onRefresh={onRefresh}
       />
     );
   }
@@ -1843,20 +1845,22 @@ function PropertyAdminDashboard({
 // Accountant Dashboard - Specialized for Accountant Role
 function AccountantDashboard({ 
   stats, 
-  user, 
-  payments, 
-  contracts, 
-  invoices, 
+  user,
+  payments,
+  contracts,
+  invoices,
   terminations,
-  onNavigate 
-}: { 
-  stats: DashboardStats | null; 
+  onNavigate,
+  onRefresh
+}: {
+  stats: DashboardStats | null;
   user: User | null;
   payments: Payment[];
   contracts: Contract[];
   invoices: Invoice[];
   terminations: ContractTerminationRequest[];
   onNavigate: (view: string) => void;
+  onRefresh?: () => void;
 }) {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
@@ -1866,13 +1870,13 @@ function AccountantDashboard({
   // Filter pending payments that need approval
   const pendingPayments = payments.filter(p => p.status === 'PENDING');
   const pendingPaymentsAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
-  
+
   // Contracts under review (waiting for payment verification)
   const contractsUnderReview = contracts.filter(c => c.status === 'UNDER_REVIEW');
-  
+
   // Termination requests pending accountant approval
   const pendingTerminations = terminations.filter(t => t.status === 'PENDING');
-  
+
   // Recent approved payments
   const recentApprovedPayments = payments
     .filter(p => p.status === 'APPROVED')
@@ -1883,8 +1887,9 @@ function AccountantDashboard({
   const handleApprove = async (paymentId: string) => {
     try {
       await api(`/payments/${paymentId}/approve`, { method: 'POST' });
-      toast({ title: 'Success', description: 'Payment approved successfully' });
-      // Refresh would happen via parent state update
+      toast({ title: 'Success', description: 'Payment approved successfully. Contract is now active.' });
+      // Refresh data to show updated contract status
+      onRefresh?.();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to approve', variant: 'destructive' });
     }
@@ -1902,6 +1907,8 @@ function AccountantDashboard({
       setIsRejectDialogOpen(false);
       setSelectedPayment(null);
       setRejectionReason('');
+      // Refresh data to show updated status
+      onRefresh?.();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to reject', variant: 'destructive' });
     }

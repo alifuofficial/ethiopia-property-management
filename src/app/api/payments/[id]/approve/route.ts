@@ -59,15 +59,31 @@ export async function POST(
       },
     });
 
-    // If advance payment, update contract
-    if (payment.paymentType === 'ADVANCE') {
-      await db.contract.update({
-        where: { id: payment.contractId },
-        data: {
-          remainingAdvance: { increment: payment.amount },
-          status: 'ACTIVE',
-        },
-      });
+    // Update contract - activate if it was under review
+    const contract = await db.contract.findUnique({
+      where: { id: payment.contractId },
+    });
+
+    if (contract) {
+      const updateData: Record<string, unknown> = {};
+
+      // If contract is under review, activate it
+      if (contract.status === 'UNDER_REVIEW') {
+        updateData.status = 'ACTIVE';
+      }
+
+      // If advance payment, update remaining advance
+      if (payment.paymentType === 'ADVANCE') {
+        updateData.remainingAdvance = { increment: payment.amount };
+      }
+
+      // Apply updates if any
+      if (Object.keys(updateData).length > 0) {
+        await db.contract.update({
+          where: { id: payment.contractId },
+          data: updateData,
+        });
+      }
     }
 
     // If invoice payment, update invoice
