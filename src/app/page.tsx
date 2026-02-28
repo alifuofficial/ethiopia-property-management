@@ -444,7 +444,7 @@ export default function PropertyManagementSystem() {
           {currentView === 'assignments' && <AssignmentsView assignments={assignments} setAssignments={setAssignments} users={users} properties={properties} />}
           {currentView === 'units' && <UnitsView units={units} setUnits={setUnits} properties={properties} />}
           {currentView === 'tenants' && <TenantsView tenants={tenants} setTenants={setTenants} />}
-          {currentView === 'contracts' && <ContractsView contracts={contracts} setContracts={setContracts} tenants={tenants} units={units} properties={properties} payments={payments} />}
+          {currentView === 'contracts' && <ContractsView contracts={contracts} setContracts={setContracts} tenants={tenants} units={units} properties={properties} payments={payments} user={user} />}
           {currentView === 'invoices' && <InvoicesView invoices={invoices} setInvoices={setInvoices} contracts={contracts} />}
           {currentView === 'payments' && <PaymentsView payments={payments} setPayments={setPayments} user={user} />}
           {currentView === 'terminations' && <TerminationsView terminations={terminations} setTerminations={setTerminations} user={user} />}
@@ -6526,18 +6526,22 @@ function TenantsView({ tenants, setTenants }: {
 }
 
 // Contracts View
-function ContractsView({ contracts, setContracts, tenants, units, properties, payments }: {
+function ContractsView({ contracts, setContracts, tenants, units, properties, payments, user }: {
   contracts: Contract[];
   setContracts: React.Dispatch<React.SetStateAction<Contract[]>>;
   tenants: Tenant[];
   units: Unit[];
   properties: Property[];
   payments: Payment[];
+  user: User | null;
 }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTerminateOpen, setIsTerminateOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [editingContract, setEditingContract] = useState<Contract | null>(null);
+  const [deletingContract, setDeletingContract] = useState<Contract | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
@@ -6741,6 +6745,70 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
     }
   };
 
+  // Open edit dialog
+  const openEditDialog = (contract: Contract) => {
+    setEditingContract(contract);
+    setFormData({
+      tenantId: contract.tenantId,
+      propertyId: contract.propertyId,
+      unitIds: contract.contractUnits?.map(cu => cu.unitId) || [],
+      startDate: contract.startDate.split('T')[0],
+      endDate: contract.endDate.split('T')[0],
+      monthlyRent: contract.monthlyRent.toString(),
+      securityDeposit: (contract.securityDeposit || 0).toString(),
+      advancePayment: (contract.advancePayment || 0).toString(),
+      notes: contract.notes || '',
+      legalAgreementUrl: contract.legalAgreementUrl || '',
+      paymentReceiptUrl: '',
+    });
+    setIsDialogOpen(true);
+  };
+
+  // Handle edit contract
+  const handleEdit = async () => {
+    if (!editingContract) return;
+    if (!validateStep(1) || !validateStep(2)) {
+      toast({ title: 'Error', description: 'Please complete all required fields', variant: 'destructive' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const updated = await api<Contract>(`/contracts/${editingContract.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...formData,
+          monthlyRent: parseFloat(formData.monthlyRent),
+          securityDeposit: parseFloat(formData.securityDeposit),
+          advancePayment: parseFloat(formData.advancePayment),
+        }),
+      });
+      setContracts(contracts.map(c => c.id === updated.id ? updated : c));
+      setIsDialogOpen(false);
+      setEditingContract(null);
+      resetForm();
+      toast({ title: 'Success', description: 'Contract updated successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to update contract', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle delete contract
+  const handleDelete = async () => {
+    if (!deletingContract) return;
+    try {
+      await api(`/contracts/${deletingContract.id}`, { method: 'DELETE' });
+      setContracts(contracts.filter(c => c.id !== deletingContract.id));
+      setIsDeleteDialogOpen(false);
+      setDeletingContract(null);
+      toast({ title: 'Success', description: 'Contract deleted successfully' });
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to delete contract', variant: 'destructive' });
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       tenantId: '',
@@ -6760,6 +6828,7 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
     setAdvanceMonths(1);
     setLegalAgreementPreview(null);
     setPaymentReceiptPreview(null);
+    setEditingContract(null);
     // Reset calendar types to default
     setStartCalendarType('gregorian');
     setEndCalendarType('gregorian');
@@ -6811,32 +6880,128 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
             <DialogHeader className="p-6 pb-0">
               <DialogTitle className="flex items-center gap-2">
                 <FileCheck className="h-5 w-5 text-emerald-600" />
-                Create New Contract
+                {editingContract ? 'Edit Contract' : 'Create New Contract'}
               </DialogTitle>
-              <DialogDescription>Step {currentStep} of 5 - {['Tenant & Property', 'Dates & Rent', 'Legal Agreement', 'Payment', 'Review'][currentStep - 1]}</DialogDescription>
+              <DialogDescription>
+                {editingContract
+                  ? 'Update contract details'
+                  : `Step ${currentStep} of 5 - ${['Tenant & Property', 'Dates & Rent', 'Legal Agreement', 'Payment', 'Review'][currentStep - 1]}`
+                }
+              </DialogDescription>
             </DialogHeader>
-            
-            {/* Step Indicator */}
-            <div className="px-6 py-2">
-              <div className="flex items-center justify-between">
-                {[1, 2, 3, 4, 5].map((step) => (
-                  <div key={step} className="flex items-center">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                      step < currentStep ? 'bg-emerald-500 text-white' :
-                      step === currentStep ? 'bg-emerald-100 text-emerald-600 border-2 border-emerald-500' :
-                      'bg-gray-100 text-gray-400'
-                    }`}>
-                      {step < currentStep ? <Check className="h-4 w-4" /> : step}
+
+            {/* Step Indicator - Only for Create Mode */}
+            {!editingContract && (
+              <div className="px-6 py-2">
+                <div className="flex items-center justify-between">
+                  {[1, 2, 3, 4, 5].map((step) => (
+                    <div key={step} className="flex items-center">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        step < currentStep ? 'bg-emerald-500 text-white' :
+                        step === currentStep ? 'bg-emerald-100 text-emerald-600 border-2 border-emerald-500' :
+                        'bg-gray-100 text-gray-400'
+                      }`}>
+                        {step < currentStep ? <Check className="h-4 w-4" /> : step}
+                      </div>
+                      {step < 5 && (
+                        <div className={`w-12 h-1 mx-1 ${step < currentStep ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+                      )}
                     </div>
-                    {step < 5 && (
-                      <div className={`w-12 h-1 mx-1 ${step < currentStep ? 'bg-emerald-500' : 'bg-gray-200'}`} />
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-            
+            )}
+
             <div className="flex-1 overflow-y-auto px-6 py-4 max-h-[calc(90vh-280px)]">
+              {/* Edit Mode - Simplified Form */}
+              {editingContract ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Tenant *</Label>
+                      <Select value={formData.tenantId} onValueChange={(v) => setFormData({ ...formData, tenantId: v })}>
+                        <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select tenant" /></SelectTrigger>
+                        <SelectContent>
+                          {tenants.map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Property *</Label>
+                      <Select value={formData.propertyId} onValueChange={(v) => setFormData({ ...formData, propertyId: v, unitIds: [] })}>
+                        <SelectTrigger className="border-emerald-500/20"><SelectValue placeholder="Select property" /></SelectTrigger>
+                        <SelectContent>
+                          {properties.map(p => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Units</Label>
+                    <div className="border border-emerald-200 rounded-lg p-3 max-h-32 overflow-y-auto bg-emerald-50/30">
+                      {availableUnits.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No available units for this property</p>
+                      ) : (
+                        availableUnits.map(u => (
+                          <label key={u.id} className="flex items-center gap-2 p-2 hover:bg-emerald-100/50 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={formData.unitIds.includes(u.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFormData({ ...formData, unitIds: [...formData.unitIds, u.id] });
+                                } else {
+                                  setFormData({ ...formData, unitIds: formData.unitIds.filter(id => id !== u.id) });
+                                }
+                              }}
+                              className="rounded border-emerald-300"
+                            />
+                            <span className="text-sm flex-1">{u.unitNumber} - Floor {u.floor}</span>
+                            <span className="text-sm font-medium text-emerald-600">{u.monthlyRent.toLocaleString()} ETB/mo</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <DualCalendarDatePicker
+                      label="Start Date"
+                      value={formData.startDate}
+                      onChange={(date) => setFormData({ ...formData, startDate: date })}
+                      calendarType={startCalendarType}
+                      onCalendarTypeChange={setStartCalendarType}
+                      required
+                    />
+                    <DualCalendarDatePicker
+                      label="End Date"
+                      value={formData.endDate}
+                      onChange={(date) => setFormData({ ...formData, endDate: date })}
+                      calendarType={endCalendarType}
+                      onCalendarTypeChange={setEndCalendarType}
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Monthly Rent (ETB) *</Label>
+                      <Input type="number" value={formData.monthlyRent} onChange={(e) => setFormData({ ...formData, monthlyRent: e.target.value })} required className="border-emerald-500/20" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Security Deposit (ETB)</Label>
+                      <Input type="number" value={formData.securityDeposit} onChange={(e) => setFormData({ ...formData, securityDeposit: e.target.value })} className="border-emerald-500/20" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Notes</Label>
+                    <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="border-emerald-500/20" />
+                  </div>
+                </div>
+              ) : (
+                <>
               {/* Step 1: Tenant & Property */}
               {currentStep === 1 && (
                 <div className="space-y-4">
@@ -7159,17 +7324,19 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
                   
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <p className="text-xs text-amber-700">
-                      After submission, the contract will be sent to the accountant for payment verification. 
+                      After submission, the contract will be sent to the accountant for payment verification.
                       Once approved, the contract will become ACTIVE.
                     </p>
                   </div>
                 </div>
               )}
+                </>
+              )}
             </div>
             
             <DialogFooter className="p-6 pt-0 border-t flex justify-between">
               <div>
-                {currentStep > 1 && (
+                {currentStep > 1 && !editingContract && (
                   <Button type="button" variant="outline" onClick={handlePrevStep}>
                     <ChevronRight className="h-4 w-4 mr-1 rotate-180" /> Previous
                   </Button>
@@ -7177,14 +7344,23 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
               </div>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
-                {currentStep < 5 ? (
+                {editingContract ? (
+                  <Button
+                    type="button"
+                    className="bg-gradient-to-r from-emerald-500 to-teal-600"
+                    onClick={handleEdit}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Updating...' : 'Update Contract'}
+                  </Button>
+                ) : currentStep < 5 ? (
                   <Button type="button" className="bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handleNextStep}>
                     Next <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 ) : (
-                  <Button 
-                    type="button" 
-                    className="bg-gradient-to-r from-emerald-500 to-teal-600" 
+                  <Button
+                    type="button"
+                    className="bg-gradient-to-r from-emerald-500 to-teal-600"
                     onClick={handleSubmit}
                     disabled={isSubmitting || !formData.legalAgreementUrl}
                   >
@@ -7331,6 +7507,16 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedContract(contract); setIsDetailDialogOpen(true); }}>
                       <Eye className="h-4 w-4 mr-1" /> View
                     </Button>
+                    {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && contract.status !== 'ACTIVE' && (
+                      <Button variant="outline" size="sm" className="flex-1 text-blue-600 hover:bg-blue-50" onClick={() => openEditDialog(contract)}>
+                        <Edit className="h-4 w-4 mr-1" /> Edit
+                      </Button>
+                    )}
+                    {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && contract.status !== 'ACTIVE' && (
+                      <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:bg-red-50" onClick={() => { setDeletingContract(contract); setIsDeleteDialogOpen(true); }}>
+                        <Trash2 className="h-4 w-4 mr-1" /> Delete
+                      </Button>
+                    )}
                     {contract.status === 'ACTIVE' && (
                       <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:bg-red-50" onClick={() => { setSelectedContract(contract); setIsTerminateOpen(true); }}>
                         <XCircle className="h-4 w-4 mr-1" /> Terminate
@@ -7379,12 +7565,22 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
                   </TableCell>
                   <TableCell>{getStatusBadge(contract.status)}</TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => { setSelectedContract(contract); setIsDetailDialogOpen(true); }}>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => { setSelectedContract(contract); setIsDetailDialogOpen(true); }} title="View">
                         <Eye className="h-4 w-4" />
                       </Button>
+                      {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && contract.status !== 'ACTIVE' && (
+                        <Button variant="ghost" size="sm" className="text-blue-600" onClick={() => openEditDialog(contract)} title="Edit">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'OWNER') && contract.status !== 'ACTIVE' && (
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => { setDeletingContract(contract); setIsDeleteDialogOpen(true); }} title="Delete">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                       {contract.status === 'ACTIVE' && (
-                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => { setSelectedContract(contract); setIsTerminateOpen(true); }}>
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => { setSelectedContract(contract); setIsTerminateOpen(true); }} title="Terminate">
                           <XCircle className="h-4 w-4" />
                         </Button>
                       )}
@@ -7492,6 +7688,40 @@ function ContractsView({ contracts, setContracts, tenants, units, properties, pa
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Contract
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this contract? This action cannot be undone.
+              {deletingContract && (
+                <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200">
+                  <p className="font-medium text-red-700 dark:text-red-300">
+                    {deletingContract.tenant?.fullName}
+                  </p>
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    {deletingContract.property?.name} • {deletingContract.monthlyRent.toLocaleString()} ETB/mo
+                  </p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingContract(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={handleDelete}
+            >
+              Delete Contract
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
